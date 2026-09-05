@@ -60,6 +60,11 @@ describe("Step Retries, Backoff, and Timeouts", () => {
     expect(stepRecord?.status).toBe("RETRY_WAIT");
     expect(stepRecord?.attemptCount).toBe(1);
 
+    // Replay before nextRetryAt has elapsed: returns undefined (suspended) and does not call handler
+    const replayBeforeRetryResult = await executor.execute(workflow, run.id);
+    expect(replayBeforeRetryResult).toBeUndefined();
+    expect(attemptCount).toBe(1);
+
     // Fast-forward nextRetryAt to simulate time elapsed
     await db.stepExecution.update({
       where: { id: stepRecord!.id },

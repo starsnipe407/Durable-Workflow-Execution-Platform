@@ -138,15 +138,7 @@ export class StepContextImpl implements StepContext {
         reject(timeoutErr);
       }, timeoutMs);
 
-      handler()
-        .then((result) => {
-          clearTimeout(timer);
-          resolve(result);
-        })
-        .catch((err) => {
-          clearTimeout(timer);
-          reject(err);
-        });
+      handler().then(resolve, reject).finally(() => clearTimeout(timer));
     });
   }
 }
