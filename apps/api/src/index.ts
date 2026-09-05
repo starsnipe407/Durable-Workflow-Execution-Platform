@@ -1,16 +1,14 @@
-﻿import { PrismaClient } from '@durable/database';
-import { createApp } from './app';
+export * from './app.js';
+export * from './plugins/auth.js';
+export * from './routes/runs.js';
+export * from './types.js';
 
-const prisma = new PrismaClient();
-
-const app = createApp({ prisma });
-
-app.listen({ port: 3000, host: '0.0.0.0' }, (err, address) => {
-  if (err) {
-    console.error(err);
-    process.exit(1);
-  }
+export async function startServer(port = Number(process.env.PORT) || 3000, host = '0.0.0.0') {
+  const { PrismaClient } = await import('@durable/database');
+  const prisma = new PrismaClient();
+  const { createApp } = await import('./app.js');
+  const app = createApp({ prisma });
+  const address = await app.listen({ port, host });
   console.log(`Server listening at ${address}`);
-});
-export { createApp } from './app';
-
+  return app;
+}

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import crypto from 'node:crypto';
 import { PrismaClient } from '@durable/database';
 import { createApp } from '@durable/api';
 import { createWorkflowClient, WorkflowClientError } from '../src/index';
@@ -20,7 +21,8 @@ describe('WorkflowClient E2E', () => {
         name: 'Client Test Tenant',
         apiKeys: {
           create: {
-            keyHash: require('node:crypto').createHash('sha256').update(validApiKey).digest('hex'), label: 'test'
+            keyHash: crypto.createHash('sha256').update(validApiKey).digest('hex'),
+            label: 'test'
           }
         }
       },
