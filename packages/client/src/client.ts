@@ -43,9 +43,16 @@ export class WorkflowClient {
   async run(options: CreateRunOptions): Promise<WorkflowRun> {
     const headers: Record<string, string> = {};
     if (options.idempotencyKey) {
-      headers['idempotency-key'] = options.idempotencyKey;
+      headers['Idempotency-Key'] = options.idempotencyKey;
     }
-    const res = await this.request('POST', '/runs', options, headers);
+    const body = {
+      workflowName: options.workflowName,
+      workflowVersion: options.workflowVersion,
+      input: options.input,
+      concurrencyKey: options.concurrencyKey,
+      requestIdempotencyKey: options.idempotencyKey,
+    };
+    const res = await this.request('POST', '/runs', body, headers);
     return res.json() as Promise<WorkflowRun>;
   }
 
@@ -55,13 +62,15 @@ export class WorkflowClient {
       return res.json() as Promise<WorkflowRun>;
     },
     list: async (options?: ListRunsOptions): Promise<{ runs: WorkflowRun[] }> => {
-      const url = new URL(`${this.baseUrl}/runs`);
+      const searchParams = new URLSearchParams();
       if (options) {
-        if (options.status) url.searchParams.set('status', options.status);
-        if (options.workflowName) url.searchParams.set('workflowName', options.workflowName);
-        if (options.limit !== undefined) url.searchParams.set('limit', options.limit.toString());
+        if (options.status) searchParams.set('status', options.status);
+        if (options.workflowName) searchParams.set('workflowName', options.workflowName);
+        if (options.limit !== undefined) searchParams.set('limit', options.limit.toString());
       }
-      const res = await this.request('GET', url.pathname + url.search);
+      const qs = searchParams.toString();
+      const path = qs ? `/runs?${qs}` : '/runs';
+      const res = await this.request('GET', path);
       return res.json() as Promise<{ runs: WorkflowRun[] }>;
     },
     retry: async (runId: string): Promise<WorkflowRun> => {
