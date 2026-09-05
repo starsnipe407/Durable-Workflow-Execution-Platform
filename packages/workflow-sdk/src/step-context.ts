@@ -32,7 +32,7 @@ export class StepContextImpl implements StepContext {
   }
 
   async settleInFlight(): Promise<void> {
-    await Promise.allSettled(Array.from(this.inFlightPromises));
+    await Promise.allSettled(this.inFlightPromises);
   }
 
   run<T>(key: string, handler: StepHandler<T>): Promise<T>;
@@ -50,11 +50,18 @@ export class StepContextImpl implements StepContext {
     const handler = typeof optionsOrHandler === "function" ? optionsOrHandler : maybeHandler!;
     const options = typeof optionsOrHandler === "object" ? optionsOrHandler : {};
 
-    return await this.executeStep<T>(key, options, handler);
+    const promise = this.executeStep<T>(key, options, handler);
+    this.inFlightPromises.add(promise);
+    promise
+      .finally(() => {
+        this.inFlightPromises.delete(promise);
+      })
+      .catch(() => {});
+
+    return await promise;
   }
 
   protected async executeStep<T>(key: string, options: StepOptions, handler: StepHandler<T>): Promise<T> {
-    const executionPromise = (async (): Promise<T> => {
     const claim = await claimStepAttempt(this.db, {
       tenantId: this.tenantId,
       workflowRunId: this.workflowRunId,
@@ -136,16 +143,6 @@ export class StepContextImpl implements StepContext {
     });
 
     return output;
-    })();
-
-    this.inFlightPromises.add(executionPromise);
-    executionPromise
-      .finally(() => {
-        this.inFlightPromises.delete(executionPromise);
-      })
-      .catch(() => {});
-
-    return await executionPromise;
   }
 
   private executeWithTimeout<T>(
