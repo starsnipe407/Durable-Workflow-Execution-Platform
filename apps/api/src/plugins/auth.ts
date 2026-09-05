@@ -37,6 +37,6 @@ export function authenticateApiKey(prisma: PrismaClient) {
     prisma.apiKey.update({
       where: { id: apiKeyRecord.id },
       data: { lastUsedAt: new Date() }
-    }).catch(console.error);
+    }).catch(() => {});
   };
 }
