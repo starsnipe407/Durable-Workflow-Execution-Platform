@@ -1,5 +1,13 @@
-﻿export interface StepOptions {
+export interface BackoffOptions {
+  type?: "exponential";
+  initialMs?: number;
+  maxMs?: number;
+  jitter?: boolean;
+}
+
+export interface StepOptions {
   retries?: number;
+  backoff?: BackoffOptions;
   timeoutMs?: number;
   idempotencyKey?: string;
 }

@@ -64,6 +64,10 @@ export class StepContextImpl implements StepContext {
       throw new WorkflowSuspendedError(`Step "${key}" is currently locked by attempt ${claim.activeAttemptId}.`);
     }
 
+    if (claim.status === "RETRY_WAIT") {
+      throw new WorkflowSuspendedError(`Step "${key}" is in RETRY_WAIT until ${claim.nextRetryAt.toISOString()}.`);
+    }
+
     // Execute user handler OUTSIDE database transaction
     const output = await handler();
 
