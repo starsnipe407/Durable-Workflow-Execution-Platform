@@ -1,0 +1,20 @@
+{
+  "name": "durable-workflow-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "test": "vitest run",
+    "lint": "turbo run lint",
+    "db:up": "docker compose up -d postgres-test redis-test",
+    "db:down": "docker compose down",
+    "db:reset": "node scripts/reset-test-db.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "turbo": "^2.4.4",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}
