@@ -4,7 +4,6 @@ import { calculateBackoffDelay } from "../src/backoff.js";
 describe("calculateBackoffDelay", () => {
   it("calculates exponential delay with bounded jitter U(0.8, 1.2)", () => {
     const options = {
-      type: "exponential" as const,
       initialMs: 1000,
       maxMs: 30000,
       jitter: true,
@@ -27,7 +26,6 @@ describe("calculateBackoffDelay", () => {
 
   it("calculates exact delay without jitter", () => {
     const options = {
-      type: "exponential" as const,
       initialMs: 500,
       maxMs: 5000,
       jitter: false,

@@ -189,4 +189,58 @@ describe("Fenced Step Persistence", () => {
     expect(attempt?.status).toBe("FAILED");
     expect(attempt?.errorMessage).toBe("Fatal error");
   });
+
+  it("rejects failStepAttempt from a stale worker when active_attempt_id has changed", async () => {
+    const run = await createWorkflowRun(db, {
+      tenantId,
+      workflowName: "fail-fenced-wf",
+      workflowVersion: "v1",
+      input: {}
+    });
+
+    const claim1 = await claimStepAttempt(db, {
+      tenantId,
+      workflowRunId: run.id,
+      stepKey: "step-fail-fenced",
+      workerId: "worker-a",
+      leaseDurationMs: 10_000
+    });
+    if (claim1.status !== "RUNNING") throw new Error("claim1 failed");
+
+    // Expire Worker A lease
+    await db.stepAttempt.update({
+      where: { id: claim1.attemptId },
+      data: { leaseExpiresAt: new Date(Date.now() - 1000) }
+    });
+
+    // Worker B claims attempt 2
+    const claim2 = await claimStepAttempt(db, {
+      tenantId,
+      workflowRunId: run.id,
+      stepKey: "step-fail-fenced",
+      workerId: "worker-b",
+      leaseDurationMs: 10_000
+    });
+    if (claim2.status !== "RUNNING") throw new Error("claim2 failed");
+
+    // Worker A wakes up and attempts to report failure -> MUST throw StaleAttemptError
+    await expect(
+      failStepAttempt(db, {
+        tenantId,
+        workflowRunId: run.id,
+        stepExecutionId: claim1.stepExecutionId,
+        attemptId: claim1.attemptId,
+        error: { message: "Late failure from worker A" },
+        isTerminalFailure: true
+      })
+    ).rejects.toThrow(StaleAttemptError);
+
+    // Verify step_execution is still active under Worker B (attempt 2) and NOT failed
+    const step = await db.stepExecution.findUnique({
+      where: { id: claim1.stepExecutionId }
+    });
+    expect(step?.status).toBe("RUNNING");
+    expect(step?.activeAttemptId).toBe(claim2.attemptId);
+  });
 });
+

@@ -1,7 +1,6 @@
 import type { BackoffOptions } from "./types.js";
 
 export const DEFAULT_BACKOFF: Required<BackoffOptions> = {
-  type: "exponential",
   initialMs: 1000,
   maxMs: 30000,
   jitter: true,

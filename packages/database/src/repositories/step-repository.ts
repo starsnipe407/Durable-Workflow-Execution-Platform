@@ -215,7 +215,36 @@ export async function failStepAttempt(
   } = params;
 
   await db.$transaction(async (tx) => {
-    // 1. Update attempt record
+    const errorJson = JSON.stringify(error);
+
+    // 1. Fenced conditional update on step_executions: only succeeds if active_attempt_id matches attemptId
+    const updatedCount = isTerminalFailure
+      ? await tx.$executeRaw`
+          UPDATE step_executions
+          SET status = 'FAILED',
+              error = ${errorJson}::jsonb,
+              failed_at = NOW(),
+              updated_at = NOW()
+          WHERE id = ${stepExecutionId}::uuid
+            AND active_attempt_id = ${attemptId}::uuid
+            AND tenant_id = ${tenantId}::uuid
+        `
+      : await tx.$executeRaw`
+          UPDATE step_executions
+          SET status = 'RETRY_WAIT',
+              error = ${errorJson}::jsonb,
+              next_retry_at = ${nextRetryAt},
+              updated_at = NOW()
+          WHERE id = ${stepExecutionId}::uuid
+            AND active_attempt_id = ${attemptId}::uuid
+            AND tenant_id = ${tenantId}::uuid
+        `;
+
+    if (updatedCount === 0) {
+      throw new StaleAttemptError();
+    }
+
+    // 2. Update attempt record
     await tx.stepAttempt.update({
       where: { id: attemptId },
       data: {
@@ -229,7 +258,7 @@ export async function failStepAttempt(
       }
     });
 
-    // 2. Record STEP_ATTEMPT_FAILED event
+    // 3. Record events
     await recordExecutionEvent(tx, {
       tenantId,
       workflowRunId,
@@ -239,17 +268,7 @@ export async function failStepAttempt(
       payload: { error: error.message, timedOut, retryDelayMs }
     });
 
-    // 3. Update step_executions
     if (isTerminalFailure) {
-      await tx.stepExecution.update({
-        where: { id: stepExecutionId },
-        data: {
-          status: "FAILED",
-          error: error as any,
-          failedAt: new Date()
-        }
-      });
-
       await recordExecutionEvent(tx, {
         tenantId,
         workflowRunId,
@@ -258,15 +277,6 @@ export async function failStepAttempt(
         payload: { error: error.message }
       });
     } else {
-      await tx.stepExecution.update({
-        where: { id: stepExecutionId },
-        data: {
-          status: "RETRY_WAIT",
-          nextRetryAt,
-          error: error as any
-        }
-      });
-
       await recordExecutionEvent(tx, {
         tenantId,
         workflowRunId,
