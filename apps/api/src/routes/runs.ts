@@ -29,7 +29,8 @@ export function runsRoutes(
     }
 
     const data = parsed.data;
-    const headerIdempotencyKey = request.headers['idempotency-key'] as string | undefined;
+    const rawHeaderKey = request.headers['idempotency-key'];
+    const headerIdempotencyKey = Array.isArray(rawHeaderKey) ? rawHeaderKey[0] : (rawHeaderKey as string | undefined);
     const idempotencyKey = data.requestIdempotencyKey || headerIdempotencyKey;
 
     if (idempotencyKey) {
