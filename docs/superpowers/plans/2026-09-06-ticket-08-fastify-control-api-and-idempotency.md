@@ -42,16 +42,16 @@
 - Create: `apps/api/src/index.ts`
 - Test: `apps/api/test/auth.test.ts`
 
-- [ ] **Step 1: Create package.json and tsconfig.json for `apps/api` and install dependencies**
-- [ ] **Step 2: Write failing tests for API key authentication (RED)**
+- [x] **Step 1: Create package.json and tsconfig.json for `apps/api` and install dependencies**
+- [x] **Step 2: Write failing tests for API key authentication (RED)**
   - Test missing API key returns 401 Unauthorized.
   - Test invalid API key hash returns 401 Unauthorized.
   - Test revoked API key returns 401 Unauthorized.
   - Test valid API key resolves correct `tenantId` on `request.tenantId` and returns 200.
-- [ ] **Step 3: Run test to verify it fails (RED)**
-- [ ] **Step 4: Implement auth plugin and Fastify app factory**
-- [ ] **Step 5: Run test to verify it passes (GREEN)**
-- [ ] **Step 6: Run build and commit**
+- [x] **Step 3: Run test to verify it fails (RED)**
+- [x] **Step 4: Implement auth plugin and Fastify app factory**
+- [x] **Step 5: Run test to verify it passes (GREEN)**
+- [x] **Step 6: Run build and commit**
 
 ---
 
@@ -62,15 +62,15 @@
 - Modify: `apps/api/src/app.ts`
 - Test: `apps/api/test/runs-create.test.ts`
 
-- [ ] **Step 1: Write failing tests for `POST /runs` and idempotency (RED)**
+- [x] **Step 1: Write failing tests for `POST /runs` and idempotency (RED)**
   - Test validation fails on missing `workflowName`.
   - Test creating run inserts `workflow_runs(PENDING)`, `execution_events(WORKFLOW_CREATED)`, enqueues BullMQ job, and returns 201 with run record.
   - Test `Idempotency-Key` header returns existing run on retry without duplicate inserts.
   - Test concurrent requests with identical idempotency key resolve to the same run without error.
-- [ ] **Step 2: Run test to verify it fails (RED)**
-- [ ] **Step 3: Implement `POST /runs` handler with atomic Prisma transaction and idempotency conflict handling**
-- [ ] **Step 4: Run test to verify it passes (GREEN)**
-- [ ] **Step 5: Run build and commit**
+- [x] **Step 2: Run test to verify it fails (RED)**
+- [x] **Step 3: Implement `POST /runs` handler with atomic Prisma transaction and idempotency conflict handling**
+- [x] **Step 4: Run test to verify it passes (GREEN)**
+- [x] **Step 5: Run build and commit**
 
 ---
 
@@ -80,17 +80,17 @@
 - Modify: `apps/api/src/routes/runs.ts`
 - Test: `apps/api/test/runs-management.test.ts`
 
-- [ ] **Step 1: Write failing tests for run inspection and commands (RED)**
+- [x] **Step 1: Write failing tests for run inspection and commands (RED)**
   - Test `GET /runs/:id` returns 404 for non-existent or cross-tenant run.
   - Test `GET /runs/:id` returns run details for authenticated tenant.
   - Test `GET /runs` returns tenant-scoped list with pagination and status filter.
   - Test `POST /runs/:id/retry` transitions `FAILED -> PENDING`, increments attempt, records `WORKFLOW_RETRY_REQUESTED` event, enqueues replay job.
   - Test `POST /runs/:id/retry` fails with 400 if run status is not `FAILED`.
   - Test `POST /runs/:id/cancel` cancels `PENDING` run directly to `CANCELLED`, or marks `RUNNING` run as `CANCEL_REQUESTED`.
-- [ ] **Step 2: Run test to verify it fails (RED)**
-- [ ] **Step 3: Implement management routes in `runs.ts`**
-- [ ] **Step 4: Run test to verify it passes (GREEN)**
-- [ ] **Step 5: Run build and commit**
+- [x] **Step 2: Run test to verify it fails (RED)**
+- [x] **Step 3: Implement management routes in `runs.ts`**
+- [x] **Step 4: Run test to verify it passes (GREEN)**
+- [x] **Step 5: Run build and commit**
 
 ---
 
@@ -104,18 +104,18 @@
 - Create: `packages/client/src/types.ts`
 - Test: `packages/client/test/client.test.ts`
 
-- [ ] **Step 1: Create package.json and tsconfig.json for `packages/client`**
-- [ ] **Step 2: Write failing tests for client SDK against Fastify test server (RED)**
+- [x] **Step 1: Create package.json and tsconfig.json for `packages/client`**
+- [x] **Step 2: Write failing tests for client SDK against Fastify test server (RED)**
   - Test `client.run()` with input and idempotencyKey.
   - Test `client.runs.get()` fetches run details.
   - Test `client.runs.list()` lists runs.
   - Test `client.runs.retry()` retries failed run.
   - Test `client.runs.cancel()` cancels active run.
   - Test error handling throws `WorkflowClientError` on 4xx/5xx responses.
-- [ ] **Step 3: Run test to verify it fails (RED)**
-- [ ] **Step 4: Implement `createWorkflowClient` and `WorkflowClient` using native fetch**
-- [ ] **Step 5: Run test to verify it passes (GREEN)**
-- [ ] **Step 6: Run build and commit**
+- [x] **Step 3: Run test to verify it fails (RED)**
+- [x] **Step 4: Implement `createWorkflowClient` and `WorkflowClient` using native fetch**
+- [x] **Step 5: Run test to verify it passes (GREEN)**
+- [x] **Step 6: Run build and commit**
 
 ---
 
@@ -124,7 +124,7 @@
 **Files:**
 - Modify: `.scratch/durable-engine/issues/08-fastify-control-api-and-idempotency.md`
 
-- [ ] **Step 1: Run full monorepo test suite across all workspace packages**
-- [ ] **Step 2: Run full monorepo build (`pnpm build`)**
-- [ ] **Step 3: Update Ticket 08 issue file with completed status, checklist, and Producer-to-Consumer verification**
-- [ ] **Step 4: Stage and commit**
+- [x] **Step 1: Run full monorepo test suite across all workspace packages**
+- [x] **Step 2: Run full monorepo build (`pnpm build`)**
+- [x] **Step 3: Update Ticket 08 issue file with completed status, checklist, and Producer-to-Consumer verification**
+- [x] **Step 4: Stage and commit**
