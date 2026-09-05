@@ -1,12 +1,26 @@
-﻿export interface StepOptions {
+export interface BackoffOptions {
+  type?: "exponential";
+  initialMs?: number;
+  maxMs?: number;
+  jitter?: boolean;
+}
+
+export interface StepOptions {
   retries?: number;
+  backoff?: BackoffOptions;
   timeoutMs?: number;
   idempotencyKey?: string;
 }
 
+export interface StepHandlerContext {
+  signal?: AbortSignal;
+}
+
+export type StepHandler<T> = (ctx: StepHandlerContext) => Promise<T>;
+
 export interface StepContext {
-  run<T>(key: string, handler: () => Promise<T>): Promise<T>;
-  run<T>(key: string, options: StepOptions, handler: () => Promise<T>): Promise<T>;
+  run<T>(key: string, handler: StepHandler<T>): Promise<T>;
+  run<T>(key: string, options: StepOptions, handler: StepHandler<T>): Promise<T>;
 }
 
 export interface WorkflowContext<TInput = unknown> {

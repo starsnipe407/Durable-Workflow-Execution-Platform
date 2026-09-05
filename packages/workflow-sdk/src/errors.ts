@@ -1,4 +1,4 @@
-﻿export class DuplicateStepKeyError extends Error {
+export class DuplicateStepKeyError extends Error {
   constructor(stepKey: string) {
     super(`Step key "${stepKey}" was invoked more than once in the same workflow run invocation. Step keys must be unique.`);
     this.name = "DuplicateStepKeyError";
@@ -11,3 +11,11 @@ export class WorkflowSuspendedError extends Error {
     this.name = "WorkflowSuspendedError";
   }
 }
+
+export class TimeoutError extends Error {
+  constructor(message = "Step execution timed out.") {
+    super(message);
+    this.name = "TimeoutError";
+  }
+}
+
