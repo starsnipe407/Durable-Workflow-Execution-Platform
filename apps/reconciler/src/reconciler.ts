@@ -199,7 +199,6 @@ export class Reconciler {
           attemptCount: number;
           retryLimit: number;
           workflowRunId: string;
-          activeAttemptId: string | null;
           workflowName: string;
           workflowVersion: string;
         }>
@@ -212,7 +211,6 @@ export class Reconciler {
           s.attempt_count AS "attemptCount",
           s.retry_limit AS "retryLimit",
           s.workflow_run_id AS "workflowRunId",
-          s.active_attempt_id AS "activeAttemptId",
           r.workflow_name AS "workflowName",
           r.workflow_version AS "workflowVersion"
         FROM step_attempts a
