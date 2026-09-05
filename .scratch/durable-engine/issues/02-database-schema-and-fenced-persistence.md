@@ -5,12 +5,12 @@ The core PostgreSQL persistence layer (packages/database) using Prisma for schem
 
 **Blocked by:** 01: Monorepo Tooling and Test Infrastructure
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] Define Prisma models: 	enants, pi_keys, workflow_definitions, workflow_runs, step_executions, step_attempts, idempotency_keys, ingested_events, workflow_event_bindings, and execution_events.
-- [ ] Apply initial migration to the test database.
-- [ ] Implement short-lived claimStepAttempt() transaction: inspects status, checks lease validity, advances attempt counter, updates ctive_attempt_id, and appends STEP_STARTED event.
-- [ ] Implement short-lived completeStepAttempt() transaction: conditionally updates step_executions matching ctive_attempt_id, appends STEP_COMPLETED event, and throws StaleAttemptError on zero rows updated.
-- [ ] Implement heartbeat lease renewal transaction updating lease_expires_at.
-- [ ] Implement atomic ecordExecutionEvent() helper for appending durable events in state-change transactions.
-- [ ] Unit/integration tests verifying atomic attempt claiming, fenced commit rejection, and durable event persistence.
+- [x] Define Prisma models: tenants, api_keys, workflow_definitions, workflow_runs, step_executions, step_attempts, idempotency_keys, ingested_events, workflow_event_bindings, and execution_events.
+- [x] Apply initial migration to the test database.
+- [x] Implement short-lived claimStepAttempt() transaction: inspects status, checks lease validity, advances attempt counter, updates active_attempt_id, and appends STEP_STARTED event.
+- [x] Implement short-lived completeStepAttempt() transaction: conditionally updates step_executions matching active_attempt_id, appends STEP_COMPLETED event, and throws StaleAttemptError on zero rows updated.
+- [x] Implement heartbeat lease renewal transaction updating lease_expires_at.
+- [x] Implement atomic recordExecutionEvent() helper for appending durable events in state-change transactions.
+- [x] Unit/integration tests verifying atomic attempt claiming, fenced commit rejection, and durable event persistence.

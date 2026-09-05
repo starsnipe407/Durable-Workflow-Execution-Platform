@@ -69,14 +69,6 @@ export async function claimStepAttempt(
       stepExecutionId = created.id;
     } else {
       stepExecutionId = existing.id;
-      await tx.stepExecution.update({
-        where: { id: stepExecutionId },
-        data: {
-          status: "RUNNING",
-          attemptCount: newAttemptNumber,
-          startedAt: existing.attempt_count === 0 ? now : undefined
-        }
-      });
     }
 
     // Insert new step_attempt
@@ -93,11 +85,23 @@ export async function claimStepAttempt(
       }
     });
 
-    // Update active_attempt_id on step_execution
-    await tx.stepExecution.update({
-      where: { id: stepExecutionId },
-      data: { activeAttemptId: attempt.id }
-    });
+    // Update active_attempt_id (and advance attempt count/status if existing)
+    if (existing) {
+      await tx.stepExecution.update({
+        where: { id: stepExecutionId },
+        data: {
+          status: "RUNNING",
+          attemptCount: newAttemptNumber,
+          activeAttemptId: attempt.id,
+          startedAt: existing.attempt_count === 0 ? now : undefined
+        }
+      });
+    } else {
+      await tx.stepExecution.update({
+        where: { id: stepExecutionId },
+        data: { activeAttemptId: attempt.id }
+      });
+    }
 
     // Append STEP_STARTED durable execution event
     await recordExecutionEvent(tx, {
@@ -136,6 +140,7 @@ export async function completeStepAttempt(
           updated_at = NOW()
       WHERE id = ${stepExecutionId}::uuid
         AND active_attempt_id = ${attemptId}::uuid
+        AND tenant_id = ${tenantId}::uuid
     `;
 
     if (updatedCount === 0) {
