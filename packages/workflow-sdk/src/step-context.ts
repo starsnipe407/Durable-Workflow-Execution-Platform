@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@durable/database";
-import { claimStepAttempt, completeStepAttempt } from "@durable/database";
-import { DuplicateStepKeyError, WorkflowSuspendedError } from "./errors.js";
+import { claimStepAttempt, completeStepAttempt, failStepAttempt } from "@durable/database";
+import { DuplicateStepKeyError, WorkflowSuspendedError, TimeoutError } from "./errors.js";
+import { calculateBackoffDelay } from "./backoff.js";
 import type { StepContext, StepOptions } from "./types.js";
 
 export interface StepContextOptions {
@@ -47,7 +48,7 @@ export class StepContextImpl implements StepContext {
     return await this.executeStep<T>(key, options, handler);
   }
 
-  protected async executeStep<T>(key: string, _options: StepOptions, handler: () => Promise<T>): Promise<T> {
+  protected async executeStep<T>(key: string, options: StepOptions, handler: () => Promise<T>): Promise<T> {
     const claim = await claimStepAttempt(this.db, {
       tenantId: this.tenantId,
       workflowRunId: this.workflowRunId,
@@ -68,8 +69,55 @@ export class StepContextImpl implements StepContext {
       throw new WorkflowSuspendedError(`Step "${key}" is in RETRY_WAIT until ${claim.nextRetryAt.toISOString()}.`);
     }
 
-    // Execute user handler OUTSIDE database transaction
-    const output = await handler();
+    const maxRetries = options.retries ?? 3; // 1 initial + 3 retries
+    const timeoutMs = options.timeoutMs;
+
+    let output: T;
+    let timedOut = false;
+
+    try {
+      if (timeoutMs && timeoutMs > 0) {
+        output = await this.executeWithTimeout(handler, timeoutMs);
+      } else {
+        output = await handler();
+      }
+    } catch (err: any) {
+      timedOut =
+        err instanceof TimeoutError ||
+        err?.name === "TimeoutError" ||
+        Boolean(err?.message?.includes("timed out"));
+      const isTerminalFailure = claim.attemptNumber > maxRetries;
+      let retryDelayMs: number | null = null;
+      let nextRetryAt: Date | null = null;
+
+      if (!isTerminalFailure) {
+        retryDelayMs = calculateBackoffDelay(claim.attemptNumber, options.backoff);
+        nextRetryAt = new Date(Date.now() + retryDelayMs);
+      }
+
+      await failStepAttempt(this.db, {
+        tenantId: this.tenantId,
+        workflowRunId: this.workflowRunId,
+        stepExecutionId: claim.stepExecutionId,
+        attemptId: claim.attemptId,
+        error: {
+          message: err instanceof Error ? err.message : String(err),
+          type: err?.name ?? (timedOut ? "TimeoutError" : "Error")
+        },
+        timedOut,
+        retryDelayMs,
+        nextRetryAt,
+        isTerminalFailure
+      });
+
+      if (isTerminalFailure) {
+        throw err;
+      }
+
+      throw new WorkflowSuspendedError(
+        `Step "${key}" failed attempt ${claim.attemptNumber}, retry scheduled in ${retryDelayMs}ms.`
+      );
+    }
 
     // Commit with fencing
     await completeStepAttempt(this.db, {
@@ -82,4 +130,24 @@ export class StepContextImpl implements StepContext {
 
     return output;
   }
+
+  private executeWithTimeout<T>(handler: () => Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const timeoutErr = new TimeoutError(`Step execution timed out after ${timeoutMs}ms.`);
+        reject(timeoutErr);
+      }, timeoutMs);
+
+      handler()
+        .then((result) => {
+          clearTimeout(timer);
+          resolve(result);
+        })
+        .catch((err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+    });
+  }
 }
+
