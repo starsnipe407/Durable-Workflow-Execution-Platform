@@ -288,6 +288,54 @@ describe("Parallel Step Execution and In-Flight Settlement", () => {
     );
     expect(betaCompleted).toHaveLength(1);
   });
+
+  it("executes 10 concurrent sibling steps without deadlock or race condition", async () => {
+    const stepCount = 10;
+    const workflow = defineWorkflow<
+      { count: number },
+      Array<{ stepIndex: number; done: boolean }>
+    >(
+      { name: "parallel-stress-wf", version: "v1" },
+      async ({ input, step }) => {
+        const promises = Array.from({ length: input.count }, (_, i) =>
+          step.run(`step-${i}`, async () => {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 10 + Math.floor(Math.random() * 40))
+            );
+            return { stepIndex: i, done: true };
+          })
+        );
+        return Promise.all(promises);
+      }
+    );
+
+    const run = await createWorkflowRun(db, {
+      tenantId,
+      workflowName: "parallel-stress-wf",
+      workflowVersion: "v1",
+      input: { count: stepCount }
+    });
+
+    const executor = new WorkflowExecutor({ db, workerId: "worker-stress-1" });
+    const result = await executor.execute(workflow, run.id);
+
+    expect(result).toHaveLength(stepCount);
+    for (let i = 0; i < stepCount; i++) {
+      expect(result?.[i]).toEqual({ stepIndex: i, done: true });
+    }
+
+    const runRecord = await db.workflowRun.findUnique({ where: { id: run.id } });
+    expect(runRecord?.status).toBe("COMPLETED");
+    expect(runRecord?.output).toEqual(result);
+
+    const stepRecords = await db.stepExecution.findMany({
+      where: { workflowRunId: run.id }
+    });
+    expect(stepRecords).toHaveLength(stepCount);
+    for (const record of stepRecords) {
+      expect(record.status).toBe("COMPLETED");
+    }
+  });
 });
 
 
