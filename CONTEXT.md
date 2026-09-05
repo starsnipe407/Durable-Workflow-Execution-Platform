@@ -35,3 +35,9 @@ _Avoid_: Optimistic concurrency, token validation
 **Reconciler**:
 A stateless repair loop that queries PostgreSQL authoritative desired state to rebuild missing BullMQ jobs, retry due steps, and abandon expired leases.
 _Avoid_: Cleaner, cron job, healer, poller
+
+## Reference Repositories and Reuse Boundaries
+See [`docs/spec/reference-reuse-boundaries.md`](docs/spec/reference-reuse-boundaries.md).
+- **Approved Commodity Infrastructure**: BullMQ, Prisma, Fastify, Zod, Next.js/React, TanStack Query, pg/ioredis.
+- **Original Project Contribution (Clean-room implementation)**: All state machines, replay engine, step identity, leases, fencing, retry orchestration, reconciler, version pinning, event matching, idempotency, distributed rate limiting/concurrency, durable execution events, and SSE streaming must be written from scratch. Reference code (OpenWorkflow, Inngest, Trigger.dev) may only be studied for patterns and never copied wholesale.
+
