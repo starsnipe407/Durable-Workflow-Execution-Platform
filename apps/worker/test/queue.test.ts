@@ -55,4 +55,24 @@ describe("Queue Producer", () => {
     const state = await job.getState();
     expect(state).toBe("delayed");
   });
+
+  it("deduplicates jobs when enqueued with the same jobId", async () => {
+    const jobData: WorkflowRunJobData = {
+      tenantId: "t-1",
+      runId: "r-dedup",
+      workflowName: "wf-1",
+      workflowVersion: "v1",
+    };
+
+    const customJobId = "retry_r-dedup_step-1_1";
+    const job1 = await enqueueWorkflowRun(queue, jobData, { delay: 5000, jobId: customJobId });
+    const job2 = await enqueueWorkflowRun(queue, jobData, { delay: 5000, jobId: customJobId });
+
+    expect(job1.id).toBe(customJobId);
+    expect(job2.id).toBe(customJobId);
+
+    const delayedJobs = await queue.getDelayed();
+    const matchingJobs = delayedJobs.filter((j) => j.id === customJobId);
+    expect(matchingJobs.length).toBe(1);
+  });
 });

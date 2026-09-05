@@ -10,4 +10,4 @@ export function createPrismaClient(url?: string): PrismaClient {
   });
 }
 
-export { PrismaClient };
+export { PrismaClient, WorkflowRunStatus } from "@prisma/client";

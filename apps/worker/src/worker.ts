@@ -1,5 +1,5 @@
 import { Worker, type ConnectionOptions, type Job, type Queue } from "bullmq";
-import type { PrismaClient } from "@durable/database";
+import type { PrismaClient, WorkflowRunStatus } from "@durable/database";
 import { recordExecutionEvent } from "@durable/database";
 import { generateId } from "@durable/shared";
 import { WorkflowExecutor } from "@durable/workflow-sdk";
@@ -12,7 +12,7 @@ import {
 import type { WorkflowRunJobData } from "./types.js";
 import type { WorkflowRegistry } from "./registry.js";
 
-function isTerminalRunStatus(status: string): boolean {
+function isTerminalRunStatus(status: WorkflowRunStatus | string): boolean {
   return status === "COMPLETED" || status === "FAILED" || status === "CANCELLED";
 }
 
@@ -115,7 +115,8 @@ export class WorkflowWorker {
 
       if (retryStep?.nextRetryAt) {
         const delay = Math.max(0, retryStep.nextRetryAt.getTime() - Date.now());
-        await enqueueWorkflowRun(this.queue, job.data, { delay });
+        const jobId = `retry_${runId}_${retryStep.id}_${retryStep.attemptCount}`;
+        await enqueueWorkflowRun(this.queue, job.data, { delay, jobId });
       }
     }
   }
