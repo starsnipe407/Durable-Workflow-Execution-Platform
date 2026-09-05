@@ -217,28 +217,21 @@ export async function failStepAttempt(
   await db.$transaction(async (tx) => {
     const errorJson = JSON.stringify(error);
 
+    const status = isTerminalFailure ? "FAILED" : "RETRY_WAIT";
+    const failedAt = isTerminalFailure ? new Date() : null;
+
     // 1. Fenced conditional update on step_executions: only succeeds if active_attempt_id matches attemptId
-    const updatedCount = isTerminalFailure
-      ? await tx.$executeRaw`
-          UPDATE step_executions
-          SET status = 'FAILED',
-              error = ${errorJson}::jsonb,
-              failed_at = NOW(),
-              updated_at = NOW()
-          WHERE id = ${stepExecutionId}::uuid
-            AND active_attempt_id = ${attemptId}::uuid
-            AND tenant_id = ${tenantId}::uuid
-        `
-      : await tx.$executeRaw`
-          UPDATE step_executions
-          SET status = 'RETRY_WAIT',
-              error = ${errorJson}::jsonb,
-              next_retry_at = ${nextRetryAt},
-              updated_at = NOW()
-          WHERE id = ${stepExecutionId}::uuid
-            AND active_attempt_id = ${attemptId}::uuid
-            AND tenant_id = ${tenantId}::uuid
-        `;
+    const updatedCount = await tx.$executeRaw`
+      UPDATE step_executions
+      SET status = ${status}::"StepExecutionStatus",
+          error = ${errorJson}::jsonb,
+          failed_at = ${failedAt},
+          next_retry_at = ${nextRetryAt},
+          updated_at = NOW()
+      WHERE id = ${stepExecutionId}::uuid
+        AND active_attempt_id = ${attemptId}::uuid
+        AND tenant_id = ${tenantId}::uuid
+    `;
 
     if (updatedCount === 0) {
       throw new StaleAttemptError();

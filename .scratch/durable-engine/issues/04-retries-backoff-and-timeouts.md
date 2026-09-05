@@ -13,3 +13,8 @@ Per-step failure management in step.run(key, options, fn). When a step handler t
 - [x] Replay engine respects RETRY_WAIT and suspends workflow until next_retry_at is reached.
 - [x] If retry limit is exhausted, step transitions to FAILED and fails the workflow run.
 - [x] Integration tests verifying backoff calculation, timeout aborts, and retry attempt progressions.
+
+## Producer-to-Consumer Interface Check (Ticket 05: Parallel Steps and Sibling Isolation)
+- **Downstream Consumer**: Ticket 05 (`step.parallel` / sibling isolation across `Promise.all([step.run(...)])`).
+- **Interfaces Produced**: `StepOptions` (`retries`, `backoff`, `timeoutMs`, `idempotencyKey`), `failStepAttempt`, `calculateBackoffDelay`, `TimeoutError`, and `WorkflowSuspendedError`.
+- **Compatibility Verified**: Sibling steps running concurrently in `Promise.all` independently claim and complete/fail attempts using fenced atomic transactions (`claimStepAttempt`, `completeStepAttempt`, `failStepAttempt`) keyed on unique `stepKey` within `workflowRunId`. Sibling failure suspends or fails only that step execution without polluting sibling state.

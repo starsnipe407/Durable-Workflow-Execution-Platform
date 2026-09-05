@@ -1,6 +1,7 @@
 import type { BackoffOptions } from "./types.js";
 
 export const DEFAULT_BACKOFF: Required<BackoffOptions> = {
+  type: "exponential",
   initialMs: 1000,
   maxMs: 30000,
   jitter: true,
@@ -21,5 +22,5 @@ export function calculateBackoffDelay(
   }
 
   const jitterFactor = 0.8 + Math.random() * 0.4;
-  return Math.round(baseDelay * jitterFactor);
+  return Math.min(Math.round(baseDelay * jitterFactor), maxMs);
 }

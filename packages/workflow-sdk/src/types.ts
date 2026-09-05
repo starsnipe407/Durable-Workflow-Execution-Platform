@@ -1,4 +1,5 @@
 export interface BackoffOptions {
+  type?: "exponential";
   initialMs?: number;
   maxMs?: number;
   jitter?: boolean;
