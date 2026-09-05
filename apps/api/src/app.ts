@@ -3,6 +3,7 @@ import { PrismaClient } from '@durable/database';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { authenticateApiKey } from './plugins/auth';
+import { runsRoutes } from './routes/runs';
 import './types'; // ensure fastify request is augmented
 
 export function createApp(options: { prisma: PrismaClient; queue?: Queue; redis?: Redis }): FastifyInstance {
@@ -15,6 +16,8 @@ export function createApp(options: { prisma: PrismaClient; queue?: Queue; redis?
     { preHandler: authenticateApiKey(options.prisma) },
     async (request) => ({ tenantId: request.tenantId })
   );
+
+  runsRoutes(app, options);
 
   return app;
 }

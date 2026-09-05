@@ -12,7 +12,7 @@ export function authenticateApiKey(prisma: PrismaClient) {
 
     if (!apiKey && request.headers.authorization) {
       const match = request.headers.authorization.match(/^Bearer\s+(.+)$/i);
-      if (match) {
+      if (match && match[1]) {
         apiKey = match[1].trim();
       }
     }
