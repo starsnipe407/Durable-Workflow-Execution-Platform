@@ -70,6 +70,8 @@ export class WorkflowExecutor {
         step: stepContext
       });
 
+      await stepContext.settleInFlight();
+
       // Mark workflow COMPLETED and record event
       await this.db.$transaction(async (tx) => {
         await tx.workflowRun.update({
@@ -90,6 +92,8 @@ export class WorkflowExecutor {
 
       return output;
     } catch (err) {
+      await stepContext.settleInFlight();
+
       if (err instanceof WorkflowSuspendedError) {
         // Workflow gracefully suspended waiting for retry/lock; do not mark run failed
         return undefined;

@@ -20,6 +20,7 @@ export class StepContextImpl implements StepContext {
   private readonly workerId: string;
   private readonly leaseDurationMs: number;
   private readonly seenKeys: Set<string>;
+  private readonly inFlightPromises: Set<Promise<unknown>> = new Set();
 
   constructor(options: StepContextOptions) {
     this.db = options.db;
@@ -28,6 +29,10 @@ export class StepContextImpl implements StepContext {
     this.workerId = options.workerId;
     this.leaseDurationMs = options.leaseDurationMs;
     this.seenKeys = options.seenKeys;
+  }
+
+  async settleInFlight(): Promise<void> {
+    await Promise.allSettled(Array.from(this.inFlightPromises));
   }
 
   run<T>(key: string, handler: StepHandler<T>): Promise<T>;
@@ -49,6 +54,7 @@ export class StepContextImpl implements StepContext {
   }
 
   protected async executeStep<T>(key: string, options: StepOptions, handler: StepHandler<T>): Promise<T> {
+    const executionPromise = (async (): Promise<T> => {
     const claim = await claimStepAttempt(this.db, {
       tenantId: this.tenantId,
       workflowRunId: this.workflowRunId,
@@ -130,6 +136,16 @@ export class StepContextImpl implements StepContext {
     });
 
     return output;
+    })();
+
+    this.inFlightPromises.add(executionPromise);
+    executionPromise
+      .finally(() => {
+        this.inFlightPromises.delete(executionPromise);
+      })
+      .catch(() => {});
+
+    return await executionPromise;
   }
 
   private executeWithTimeout<T>(
