@@ -2,7 +2,7 @@ import type { PrismaClient } from "@durable/database";
 import { claimStepAttempt, completeStepAttempt, failStepAttempt } from "@durable/database";
 import { DuplicateStepKeyError, WorkflowSuspendedError, TimeoutError } from "./errors.js";
 import { calculateBackoffDelay } from "./backoff.js";
-import type { StepContext, StepOptions } from "./types.js";
+import type { StepContext, StepOptions, StepHandler } from "./types.js";
 
 export interface StepContextOptions {
   db: PrismaClient;
@@ -30,12 +30,12 @@ export class StepContextImpl implements StepContext {
     this.seenKeys = options.seenKeys;
   }
 
-  run<T>(key: string, handler: () => Promise<T>): Promise<T>;
-  run<T>(key: string, options: StepOptions, handler: () => Promise<T>): Promise<T>;
+  run<T>(key: string, handler: StepHandler<T>): Promise<T>;
+  run<T>(key: string, options: StepOptions, handler: StepHandler<T>): Promise<T>;
   async run<T>(
     key: string,
-    optionsOrHandler: StepOptions | (() => Promise<T>),
-    maybeHandler?: () => Promise<T>
+    optionsOrHandler: StepOptions | StepHandler<T>,
+    maybeHandler?: StepHandler<T>
   ): Promise<T> {
     if (this.seenKeys.has(key)) {
       throw new DuplicateStepKeyError(key);
@@ -48,7 +48,7 @@ export class StepContextImpl implements StepContext {
     return await this.executeStep<T>(key, options, handler);
   }
 
-  protected async executeStep<T>(key: string, options: StepOptions, handler: () => Promise<T>): Promise<T> {
+  protected async executeStep<T>(key: string, options: StepOptions, handler: StepHandler<T>): Promise<T> {
     const claim = await claimStepAttempt(this.db, {
       tenantId: this.tenantId,
       workflowRunId: this.workflowRunId,
@@ -74,18 +74,19 @@ export class StepContextImpl implements StepContext {
 
     let output: T;
     let timedOut = false;
+    const abortController = new AbortController();
 
     try {
       if (timeoutMs && timeoutMs > 0) {
-        output = await this.executeWithTimeout(handler, timeoutMs);
+        output = await this.executeWithTimeout(handler, abortController, timeoutMs);
       } else {
-        output = await handler();
+        output = await handler({ signal: abortController.signal });
       }
     } catch (err: any) {
       timedOut =
         err instanceof TimeoutError ||
         err?.name === "TimeoutError" ||
-        Boolean(err?.message?.includes("timed out"));
+        err?.name === "AbortError";
       const isTerminalFailure = claim.attemptNumber > maxRetries;
       let retryDelayMs: number | null = null;
       let nextRetryAt: Date | null = null;
@@ -131,14 +132,21 @@ export class StepContextImpl implements StepContext {
     return output;
   }
 
-  private executeWithTimeout<T>(handler: () => Promise<T>, timeoutMs: number): Promise<T> {
+  private executeWithTimeout<T>(
+    handler: StepHandler<T>,
+    abortController: AbortController,
+    timeoutMs: number
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
+        abortController.abort();
         const timeoutErr = new TimeoutError(`Step execution timed out after ${timeoutMs}ms.`);
         reject(timeoutErr);
       }, timeoutMs);
 
-      handler().then(resolve, reject).finally(() => clearTimeout(timer));
+      handler({ signal: abortController.signal })
+        .then(resolve, reject)
+        .finally(() => clearTimeout(timer));
     });
   }
 }

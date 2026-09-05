@@ -116,4 +116,74 @@ describe("Step Retries, Backoff, and Timeouts", () => {
     expect(attempt?.status).toBe("TIMED_OUT");
     expect(attempt?.timedOut).toBe(true);
   });
+
+  it("passes an AbortSignal to the step handler and triggers signal.abort() upon timeout", async () => {
+    let abortedInHandler = false;
+
+    const workflow = defineWorkflow<{ id: string }, { done: boolean }>(
+      { name: "abort-signal-wf", version: "v1" },
+      async ({ input: _input, step }) => {
+        await step.run(
+          "abortable-step",
+          { retries: 0, timeoutMs: 50 },
+          async ({ signal }) => {
+            await new Promise((resolve) => {
+              const timer = setTimeout(resolve, 300);
+              signal?.addEventListener("abort", () => {
+                abortedInHandler = true;
+                clearTimeout(timer);
+                resolve(null);
+              });
+            });
+            return "ok";
+          }
+        );
+        return { done: true };
+      }
+    );
+
+    const run = await createWorkflowRun(db, {
+      tenantId,
+      workflowName: "abort-signal-wf",
+      workflowVersion: "v1",
+      input: { id: "test-abort" }
+    });
+
+    const executor = new WorkflowExecutor({ db, workerId: "worker-1" });
+    await expect(executor.execute(workflow, run.id)).rejects.toThrow();
+    expect(abortedInHandler).toBe(true);
+  });
+
+  it("does not misclassify user error containing 'timed out' as engine TIMED_OUT", async () => {
+    const workflow = defineWorkflow<{ id: string }, { done: boolean }>(
+      { name: "custom-error-wf", version: "v1" },
+      async ({ input: _input, step }) => {
+        await step.run(
+          "user-err-step",
+          { retries: 0 },
+          async () => {
+            throw new Error("External payment provider connection timed out");
+          }
+        );
+        return { done: true };
+      }
+    );
+
+    const run = await createWorkflowRun(db, {
+      tenantId,
+      workflowName: "custom-error-wf",
+      workflowVersion: "v1",
+      input: { id: "test-custom-err" }
+    });
+
+    const executor = new WorkflowExecutor({ db, workerId: "worker-1" });
+    await expect(executor.execute(workflow, run.id)).rejects.toThrow();
+
+    const attempt = await db.stepAttempt.findFirst({
+      where: { tenantId, stepExecution: { stepKey: "user-err-step" } }
+    });
+    // Must be FAILED, NOT TIMED_OUT
+    expect(attempt?.status).toBe("FAILED");
+    expect(attempt?.timedOut).toBe(false);
+  });
 });
