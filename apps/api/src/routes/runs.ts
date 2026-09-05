@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { PrismaClient } from '@durable/database';
+import { PrismaClient, WorkflowRunStatus } from '@durable/database';
 import { Queue } from 'bullmq';
 import { enqueueWorkflowRun } from '@durable/worker';
 import { authenticateApiKey } from '../plugins/auth';
@@ -145,7 +145,7 @@ export function runsRoutes(
     const runs = await options.prisma.workflowRun.findMany({
       where: {
         tenantId: request.tenantId,
-        ...(query.status ? { status: query.status as any } : {}),
+        ...(query.status ? { status: query.status as WorkflowRunStatus } : {}),
         ...(query.workflowName ? { workflowName: query.workflowName } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -236,9 +236,9 @@ export function runsRoutes(
     }
 
     const updatedRun = await options.prisma.$transaction(async (tx) => {
-      const targetStatus = run.status === 'PENDING' ? 'CANCELLED' : 'CANCEL_REQUESTED';
+      const targetStatus: WorkflowRunStatus = run.status === 'PENDING' ? 'CANCELLED' : 'CANCEL_REQUESTED';
       
-      const dataToUpdate: any = { status: targetStatus };
+      const dataToUpdate: Record<string, unknown> = { status: targetStatus };
       if (targetStatus === 'CANCELLED') {
         dataToUpdate.cancelledAt = new Date();
       } else {
