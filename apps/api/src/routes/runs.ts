@@ -116,4 +116,152 @@ export function runsRoutes(
       throw error;
     }
   });
+
+  app.get('/runs/:id', { preHandler: authenticateApiKey(options.prisma) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const run = await options.prisma.workflowRun.findUnique({
+      where: {
+        id,
+        tenantId: request.tenantId,
+      },
+      include: {
+        stepExecutions: {
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!run) {
+      return reply.status(404).send({ error: 'Not Found', message: 'Workflow run not found' });
+    }
+
+    return reply.status(200).send(run);
+  });
+
+  app.get('/runs', { preHandler: authenticateApiKey(options.prisma) }, async (request, reply) => {
+    const query = request.query as { status?: string; workflowName?: string; limit?: string };
+    const limit = query.limit ? parseInt(query.limit, 10) : 20;
+    
+    const runs = await options.prisma.workflowRun.findMany({
+      where: {
+        tenantId: request.tenantId,
+        ...(query.status ? { status: query.status as any } : {}),
+        ...(query.workflowName ? { workflowName: query.workflowName } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 100),
+    });
+
+    return reply.status(200).send({ runs });
+  });
+
+  app.post('/runs/:id/retry', { preHandler: authenticateApiKey(options.prisma) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    
+    const run = await options.prisma.workflowRun.findUnique({
+      where: {
+        id,
+        tenantId: request.tenantId,
+      },
+    });
+
+    if (!run) {
+      return reply.status(404).send({ error: 'Not Found', message: 'Workflow run not found' });
+    }
+
+    if (run.status !== 'FAILED') {
+      return reply.status(400).send({ error: 'Bad Request', message: `Cannot retry run in status ${run.status}` });
+    }
+
+    const updatedRun = await options.prisma.$transaction(async (tx) => {
+      const nextAttempt = run.workflowAttempt + 1;
+      
+      const updated = await tx.workflowRun.update({
+        where: { id },
+        data: {
+          status: 'PENDING',
+          failedAt: null,
+          error: null as any,
+          workflowAttempt: { increment: 1 },
+        },
+      });
+
+      await tx.executionEvent.create({
+        data: {
+          tenantId: request.tenantId,
+          workflowRunId: run.id,
+          eventType: 'WORKFLOW_RETRY_REQUESTED',
+          payload: {
+            previousAttempt: run.workflowAttempt,
+            newAttempt: nextAttempt,
+          },
+        },
+      });
+
+      return updated;
+    });
+
+    if (options.queue) {
+      await enqueueWorkflowRun(
+        options.queue,
+        {
+          runId: updatedRun.id,
+          workflowName: updatedRun.workflowName,
+          workflowVersion: updatedRun.workflowVersion,
+          tenantId: updatedRun.tenantId,
+        },
+        { jobId: 'replay_' + updatedRun.id + '_attempt_' + updatedRun.workflowAttempt }
+      );
+    }
+
+    return reply.status(200).send(updatedRun);
+  });
+
+  app.post('/runs/:id/cancel', { preHandler: authenticateApiKey(options.prisma) }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    
+    const run = await options.prisma.workflowRun.findUnique({
+      where: {
+        id,
+        tenantId: request.tenantId,
+      },
+    });
+
+    if (!run) {
+      return reply.status(404).send({ error: 'Not Found', message: 'Workflow run not found' });
+    }
+
+    if (['COMPLETED', 'FAILED', 'CANCELLED'].includes(run.status)) {
+      return reply.status(400).send({ error: 'Bad Request', message: `Cannot cancel run in status ${run.status}` });
+    }
+
+    const updatedRun = await options.prisma.$transaction(async (tx) => {
+      const targetStatus = run.status === 'PENDING' ? 'CANCELLED' : 'CANCEL_REQUESTED';
+      
+      const dataToUpdate: any = { status: targetStatus };
+      if (targetStatus === 'CANCELLED') {
+        dataToUpdate.cancelledAt = new Date();
+      } else {
+        dataToUpdate.cancelRequestedAt = new Date();
+      }
+
+      const updated = await tx.workflowRun.update({
+        where: { id },
+        data: dataToUpdate,
+      });
+
+      await tx.executionEvent.create({
+        data: {
+          tenantId: request.tenantId,
+          workflowRunId: run.id,
+          eventType: targetStatus === 'CANCELLED' ? 'WORKFLOW_CANCELLED' : 'WORKFLOW_CANCEL_REQUESTED',
+          payload: { originalStatus: run.status },
+        },
+      });
+
+      return updated;
+    });
+
+    return reply.status(200).send(updatedRun);
+  });
 }
