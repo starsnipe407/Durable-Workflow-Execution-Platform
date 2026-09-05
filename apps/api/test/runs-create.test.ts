@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, beforeAll, vi } from 'vitest';
 import { PrismaClient } from '@durable/database';
+import { WORKFLOW_JOB_NAME } from '@durable/worker';
 import { createApp } from '../src/app';
 import { hashApiKey } from '../src/plugins/auth';
 import { FastifyInstance } from 'fastify';
@@ -89,9 +90,9 @@ describe('POST /runs', () => {
     // Check Queue
     expect(mockQueue.add).toHaveBeenCalledTimes(1);
     expect(mockQueue.add).toHaveBeenCalledWith(
-      'run_' + body.id,
+      WORKFLOW_JOB_NAME,
       expect.objectContaining({ runId: body.id }),
-      expect.any(Object)
+      expect.objectContaining({ jobId: 'run_' + body.id })
     );
   });
 

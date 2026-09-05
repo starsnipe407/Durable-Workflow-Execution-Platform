@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { PrismaClient } from '@durable/database';
 import { Queue } from 'bullmq';
+import { enqueueWorkflowRun } from '@durable/worker';
 import { authenticateApiKey } from '../plugins/auth';
 
 const createRunSchema = z.object({
@@ -79,8 +80,8 @@ export function runsRoutes(
       });
 
       if (options.queue) {
-        await options.queue.add(
-          'run_' + run.id,
+        await enqueueWorkflowRun(
+          options.queue,
           {
             runId: run.id,
             workflowName: run.workflowName,

@@ -8,7 +8,8 @@ export function hashApiKey(apiKey: string): string {
 
 export function authenticateApiKey(prisma: PrismaClient) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    let apiKey = request.headers['x-api-key'] as string | undefined;
+    const rawApiKey = request.headers['x-api-key'];
+    let apiKey = Array.isArray(rawApiKey) ? rawApiKey[0] : (rawApiKey as string | undefined);
 
     if (!apiKey && request.headers.authorization) {
       const match = request.headers.authorization.match(/^Bearer\s+(.+)$/i);
