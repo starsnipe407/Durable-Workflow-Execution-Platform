@@ -8,3 +8,5 @@ coverage
 !.env.test
 .DS_Store
 *.tsbuildinfo
+
+.superpowers
