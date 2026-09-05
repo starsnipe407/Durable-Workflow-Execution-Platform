@@ -5,11 +5,11 @@ The developer-facing workflow SDK (packages/workflow-sdk) and execution engine p
 
 **Blocked by:** 02: Database Schema and Fenced Persistence
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] Implement defineWorkflow supporting standard sync ({ input, step }) => { ... } handlers.
-- [ ] Implement step.run(key, fn) with in-memory Set<string> duplicate key detection throwing DuplicateStepKeyError.
-- [ ] Implement WorkflowSuspendedError sentinel thrown when encountering incomplete/waiting steps during replay to unwind the stack cleanly.
-- [ ] Implement WorkflowExecutor that loads run state, coordinates step execution/replay, and invokes user handlers outside open database transactions.
-- [ ] Append durable execution events (WORKFLOW_STARTED, STEP_COMPLETED, WORKFLOW_COMPLETED) atomically during state mutations.
-- [ ] Provide end-to-end integration test proving the crash and replay invariant with memoized step outputs and verifying corresponding execution events are recorded.
+- [x] Implement defineWorkflow supporting standard async ({ input, step }) => { ... } handlers.
+- [x] Implement step.run(key, fn) with in-memory Set<string> duplicate key detection throwing DuplicateStepKeyError.
+- [x] Implement WorkflowSuspendedError sentinel thrown when encountering incomplete/waiting steps during replay to unwind the stack cleanly.
+- [x] Implement WorkflowExecutor that loads run state, coordinates step execution/replay, and invokes user handlers outside open database transactions.
+- [x] Append durable execution events (WORKFLOW_STARTED, STEP_COMPLETED, WORKFLOW_COMPLETED) atomically during state mutations.
+- [x] Provide end-to-end integration test proving the crash and replay invariant with memoized step outputs and verifying corresponding execution events are recorded.

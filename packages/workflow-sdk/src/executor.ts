@@ -38,8 +38,8 @@ export class WorkflowExecutor {
     }
 
     const now = new Date();
-    // Transition to RUNNING and record WORKFLOW_STARTED if PENDING
-    if (run.status === "PENDING") {
+    // Transition to RUNNING and record WORKFLOW_STARTED if PENDING or FAILED
+    if (run.status === "PENDING" || run.status === "FAILED") {
       await this.db.$transaction(async (tx) => {
         await tx.workflowRun.update({
           where: { id: runId },
@@ -95,13 +95,15 @@ export class WorkflowExecutor {
         return undefined;
       }
 
+      const errorMessage = err instanceof Error ? err.message : String(err);
+
       // Record failure on workflow run
       await this.db.$transaction(async (tx) => {
         await tx.workflowRun.update({
           where: { id: runId },
           data: {
             status: "FAILED",
-            error: { message: (err as Error).message } as any,
+            error: { message: errorMessage } as any,
             failedAt: new Date()
           }
         });
@@ -109,7 +111,7 @@ export class WorkflowExecutor {
           tenantId: run.tenantId,
           workflowRunId: runId,
           eventType: "WORKFLOW_FAILED",
-          payload: { error: (err as Error).message }
+          payload: { error: errorMessage }
         });
       });
 
