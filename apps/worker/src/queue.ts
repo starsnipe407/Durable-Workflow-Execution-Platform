@@ -21,7 +21,7 @@ export async function enqueueWorkflowRun(
   data: WorkflowRunJobData,
   options?: EnqueueWorkflowOptions
 ): Promise<Job<WorkflowRunJobData>> {
-  return await queue.add(WORKFLOW_JOB_NAME, data, {
+  return queue.add(WORKFLOW_JOB_NAME, data, {
     delay: options?.delay,
     jobId: options?.jobId,
   });
