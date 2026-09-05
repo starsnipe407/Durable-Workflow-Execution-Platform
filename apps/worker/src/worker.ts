@@ -7,9 +7,14 @@ import {
   WORKFLOW_QUEUE_NAME,
   createWorkflowQueue,
   enqueueWorkflowRun,
+  resolveRedisConnection,
 } from "./queue.js";
 import type { WorkflowRunJobData } from "./types.js";
 import type { WorkflowRegistry } from "./registry.js";
+
+function isTerminalRunStatus(status: string): boolean {
+  return status === "COMPLETED" || status === "FAILED" || status === "CANCELLED";
+}
 
 export interface WorkflowWorkerOptions {
   db: PrismaClient;
@@ -39,12 +44,7 @@ export class WorkflowWorker {
       workerId: this.workerId,
     });
 
-    const resolved =
-      options.connectionOrUrl ??
-      (process.env.REDIS_URL || "redis://localhost:6380");
-    const connection: ConnectionOptions =
-      typeof resolved === "string" ? { url: resolved } : resolved;
-
+    const connection = resolveRedisConnection(options.connectionOrUrl);
     const queueName =
       options.queue?.name ?? options.queueName ?? WORKFLOW_QUEUE_NAME;
 
@@ -52,7 +52,7 @@ export class WorkflowWorker {
       this.queue = options.queue;
       this.ownsQueue = false;
     } else {
-      this.queue = createWorkflowQueue(resolved, queueName);
+      this.queue = createWorkflowQueue(options.connectionOrUrl, queueName);
       this.ownsQueue = true;
     }
 
@@ -75,12 +75,7 @@ export class WorkflowWorker {
       where: { id: runId },
     });
 
-    if (
-      !run ||
-      run.status === "COMPLETED" ||
-      run.status === "FAILED" ||
-      run.status === "CANCELLED"
-    ) {
+    if (!run || isTerminalRunStatus(run.status)) {
       return;
     }
 
@@ -102,13 +97,6 @@ export class WorkflowWorker {
         });
       });
       return;
-    }
-
-    if (run.blockedReason) {
-      await this.db.workflowRun.update({
-        where: { id: runId },
-        data: { blockedReason: null },
-      });
     }
 
     const output = await this.executor.execute(workflow, runId);

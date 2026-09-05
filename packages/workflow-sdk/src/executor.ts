@@ -43,7 +43,7 @@ export class WorkflowExecutor {
       await this.db.$transaction(async (tx) => {
         await tx.workflowRun.update({
           where: { id: runId },
-          data: { status: "RUNNING", startedAt: now }
+          data: { status: "RUNNING", startedAt: now, blockedReason: null }
         });
         await recordExecutionEvent(tx, {
           tenantId: run.tenantId,
