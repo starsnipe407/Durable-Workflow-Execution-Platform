@@ -36,6 +36,7 @@ describe("Reconciler - Pending Runs", () => {
     reconciler = new Reconciler({
       db,
       queue,
+      tenantId,
     });
   });
 

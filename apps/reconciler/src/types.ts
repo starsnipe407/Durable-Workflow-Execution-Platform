@@ -9,6 +9,7 @@ export interface ReconcilerOptions {
   queueName?: string;
   pollIntervalMs?: number;
   batchSize?: number;
+  tenantId?: string;
 }
 
 export interface ReconcilerStats {
