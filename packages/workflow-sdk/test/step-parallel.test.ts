@@ -131,5 +131,163 @@ describe("Parallel Step Execution and In-Flight Settlement", () => {
     const runRecord = await db.workflowRun.findUnique({ where: { id: run.id } });
     expect(runRecord?.status).toBe("COMPLETED");
   });
+
+  it("guarantees sibling isolation, preserves attempt records, and logs complete event stream across replays", async () => {
+    let alphaCallCount = 0;
+    let betaCallCount = 0;
+
+    const workflow = defineWorkflow<
+      { id: string },
+      { alpha: { result: string }; beta: { result: string } }
+    >(
+      { name: "sibling-isolation-wf", version: "v1" },
+      async ({ input: _input, step }) => {
+        const [alpha, beta] = await Promise.all([
+          step.run("sibling-alpha", async () => {
+            alphaCallCount++;
+            return { result: "alpha-ok" };
+          }),
+          step.run(
+            "sibling-beta",
+            { retries: 1, backoff: { initialMs: 1000, jitter: false } },
+            async () => {
+              betaCallCount++;
+              if (betaCallCount === 1) {
+                throw new Error("BETA_FAIL");
+              }
+              return { result: "beta-ok" };
+            }
+          )
+        ]);
+        return { alpha, beta };
+      }
+    );
+
+    const run = await createWorkflowRun(db, {
+      tenantId,
+      workflowName: "sibling-isolation-wf",
+      workflowVersion: "v1",
+      input: { id: "test-isolation-1" }
+    });
+
+    const executor = new WorkflowExecutor({ db, workerId: "worker-isolation-1" });
+
+    // 1. First execution: sibling-alpha succeeds, sibling-beta fails attempt 1, workflow suspends
+    const result1 = await executor.execute(workflow, run.id);
+    expect(result1).toBeUndefined();
+    expect(alphaCallCount).toBe(1);
+    expect(betaCallCount).toBe(1);
+
+    // Sibling-alpha step execution
+    const alphaStepRecord = await db.stepExecution.findUnique({
+      where: { workflowRunId_stepKey: { workflowRunId: run.id, stepKey: "sibling-alpha" } }
+    });
+    expect(alphaStepRecord).not.toBeNull();
+    expect(alphaStepRecord?.status).toBe("COMPLETED");
+    expect(alphaStepRecord?.attemptCount).toBe(1);
+    expect(alphaStepRecord?.output).toEqual({ result: "alpha-ok" });
+
+    // Sibling-beta step execution
+    const betaStepRecord = await db.stepExecution.findUnique({
+      where: { workflowRunId_stepKey: { workflowRunId: run.id, stepKey: "sibling-beta" } }
+    });
+    expect(betaStepRecord).not.toBeNull();
+    expect(betaStepRecord?.status).toBe("RETRY_WAIT");
+    expect(betaStepRecord?.attemptCount).toBe(1);
+    expect((betaStepRecord?.error as any)?.message).toBe("BETA_FAIL");
+
+    // Sibling-beta attempt history
+    const betaAttempts = await db.stepAttempt.findMany({
+      where: { stepExecutionId: betaStepRecord!.id },
+      orderBy: { attemptNumber: "asc" }
+    });
+    expect(betaAttempts).toHaveLength(1);
+    expect(betaAttempts[0]?.status).toBe("FAILED");
+    expect(betaAttempts[0]?.attemptNumber).toBe(1);
+    expect(betaAttempts[0]?.errorMessage).toBe("BETA_FAIL");
+
+    // 2. Premature replay (before backoff elapses)
+    const resultPremature = await executor.execute(workflow, run.id);
+    expect(resultPremature).toBeUndefined();
+    expect(alphaCallCount).toBe(1);
+    expect(betaCallCount).toBe(1);
+
+    // 3. Fast-forward backoff & Replay
+    await db.stepExecution.update({
+      where: { id: betaStepRecord!.id },
+      data: { nextRetryAt: new Date(Date.now() - 1000) }
+    });
+
+    const resultFinal = await executor.execute(workflow, run.id);
+    expect(resultFinal).toEqual({
+      alpha: { result: "alpha-ok" },
+      beta: { result: "beta-ok" }
+    });
+    expect(alphaCallCount).toBe(1); // Memoized, NEVER re-executed
+    expect(betaCallCount).toBe(2);
+
+    // Sibling-beta completed after retry
+    const finalBetaRecord = await db.stepExecution.findUnique({
+      where: { id: betaStepRecord!.id }
+    });
+    expect(finalBetaRecord?.status).toBe("COMPLETED");
+    expect(finalBetaRecord?.attemptCount).toBe(2);
+    expect(finalBetaRecord?.output).toEqual({ result: "beta-ok" });
+
+    // Workflow completed
+    const finalRun = await db.workflowRun.findUnique({ where: { id: run.id } });
+    expect(finalRun?.status).toBe("COMPLETED");
+    expect(finalRun?.output).toEqual({
+      alpha: { result: "alpha-ok" },
+      beta: { result: "beta-ok" }
+    });
+
+    // 4. Execution events audit trail verification
+    const events = await db.executionEvent.findMany({
+      where: { workflowRunId: run.id },
+      orderBy: { id: "asc" }
+    });
+    const eventTypes = events.map((e) => e.eventType);
+
+    expect(eventTypes).toContain("WORKFLOW_STARTED");
+    expect(eventTypes).toContain("STEP_STARTED");
+    expect(eventTypes).toContain("STEP_COMPLETED");
+    expect(eventTypes).toContain("STEP_ATTEMPT_FAILED");
+    expect(eventTypes).toContain("STEP_RETRY_SCHEDULED");
+    expect(eventTypes).toContain("WORKFLOW_COMPLETED");
+
+    // Sibling-alpha started and completed events
+    const alphaStarted = events.filter(
+      (e) => e.eventType === "STEP_STARTED" && (e.payload as any)?.stepKey === "sibling-alpha"
+    );
+    expect(alphaStarted).toHaveLength(1);
+
+    const alphaCompleted = events.filter(
+      (e) => e.eventType === "STEP_COMPLETED" && e.stepExecutionId === alphaStepRecord!.id
+    );
+    expect(alphaCompleted).toHaveLength(1);
+
+    // Sibling-beta lifecycle events: attempt 1 started, failed, retry scheduled, attempt 2 started, completed
+    const betaStarted = events.filter(
+      (e) => e.eventType === "STEP_STARTED" && (e.payload as any)?.stepKey === "sibling-beta"
+    );
+    expect(betaStarted).toHaveLength(2);
+
+    const betaAttemptFailed = events.filter(
+      (e) => e.eventType === "STEP_ATTEMPT_FAILED" && e.stepExecutionId === betaStepRecord!.id
+    );
+    expect(betaAttemptFailed).toHaveLength(1);
+
+    const betaRetryScheduled = events.filter(
+      (e) => e.eventType === "STEP_RETRY_SCHEDULED" && e.stepExecutionId === betaStepRecord!.id
+    );
+    expect(betaRetryScheduled).toHaveLength(1);
+
+    const betaCompleted = events.filter(
+      (e) => e.eventType === "STEP_COMPLETED" && e.stepExecutionId === betaStepRecord!.id
+    );
+    expect(betaCompleted).toHaveLength(1);
+  });
 });
+
 
