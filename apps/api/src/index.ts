@@ -1,4 +1,4 @@
-import { PrismaClient } from '@durable/database';
+﻿import { PrismaClient } from '@durable/database';
 import { createApp } from './app';
 
 const prisma = new PrismaClient();
@@ -12,3 +12,5 @@ app.listen({ port: 3000, host: '0.0.0.0' }, (err, address) => {
   }
   console.log(`Server listening at ${address}`);
 });
+export { createApp } from './app';
+

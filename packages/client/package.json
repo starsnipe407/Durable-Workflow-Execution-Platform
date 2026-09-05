@@ -1,0 +1,22 @@
+{
+  "name": "@durable/client",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "dotenv -e ../../.env.test -- vitest run"
+  },
+  "dependencies": {
+    "@durable/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@durable/api": "workspace:*",
+    "@durable/database": "workspace:*",
+    "@types/node": "^20.0.0",
+    "dotenv-cli": "^11.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
