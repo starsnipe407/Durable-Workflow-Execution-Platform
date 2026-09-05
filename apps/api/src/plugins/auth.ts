@@ -13,7 +13,7 @@ export function authenticateApiKey(prisma: PrismaClient) {
     if (!apiKey && request.headers.authorization) {
       const match = request.headers.authorization.match(/^Bearer\s+(.+)$/i);
       if (match) {
-        apiKey = match[1];
+        apiKey = match[1].trim();
       }
     }
 
@@ -21,7 +21,7 @@ export function authenticateApiKey(prisma: PrismaClient) {
       return reply.status(401).send({ error: 'Unauthorized', message: 'Missing API key' });
     }
 
-    const keyHash = hashApiKey(apiKey);
+    const keyHash = hashApiKey(apiKey.trim());
     const apiKeyRecord = await prisma.apiKey.findUnique({
       where: { keyHash },
       include: { tenant: true },
