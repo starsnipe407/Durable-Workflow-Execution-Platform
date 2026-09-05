@@ -1,1 +1,1 @@
-{"root":["./src/client.ts","./src/index.ts"],"version":"5.9.3"}
+{"root":["./src/client.ts","./src/errors.ts","./src/index.ts","./src/types.ts","./src/repositories/execution-events.ts","./src/repositories/step-repository.ts","./src/repositories/workflow-repository.ts"],"version":"5.9.3"}

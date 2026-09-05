@@ -3,3 +3,4 @@ export * from "./errors.js";
 export * from "./types.js";
 export * from "./repositories/execution-events.js";
 export * from "./repositories/workflow-repository.js";
+export * from "./repositories/step-repository.js";
