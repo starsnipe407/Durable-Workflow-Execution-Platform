@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createPrismaClient } from "../src/client.js";
 import { createWorkflowRun } from "../src/repositories/workflow-repository.js";
-import { claimStepAttempt, completeStepAttempt, renewAttemptLease } from "../src/repositories/step-repository.js";
+import { claimStepAttempt, completeStepAttempt, renewAttemptLease, failStepAttempt } from "../src/index.js";
 import { StaleAttemptError } from "../src/errors.js";
 
 describe("Fenced Step Persistence", () => {
@@ -110,5 +110,83 @@ describe("Fenced Step Persistence", () => {
         output: { result: "stale-A" }
       })
     ).rejects.toThrow(StaleAttemptError);
+  });
+
+  it("records step attempt failure and transitions to RETRY_WAIT", async () => {
+    const run = await createWorkflowRun(db, {
+      tenantId,
+      workflowName: "fail-wf",
+      workflowVersion: "v1",
+      input: {}
+    });
+
+    const claim = await claimStepAttempt(db, {
+      tenantId,
+      workflowRunId: run.id,
+      stepKey: "step-fail",
+      workerId: "worker-1",
+      leaseDurationMs: 10_000
+    });
+    if (claim.status !== "RUNNING") throw new Error("claim failed");
+
+    const nextRetryAt = new Date(Date.now() + 5000);
+    await failStepAttempt(db, {
+      tenantId,
+      workflowRunId: run.id,
+      stepExecutionId: claim.stepExecutionId,
+      attemptId: claim.attemptId,
+      error: { message: "Simulated failure" },
+      retryDelayMs: 5000,
+      nextRetryAt,
+      isTerminalFailure: false
+    });
+
+    const retryClaim = await claimStepAttempt(db, {
+      tenantId,
+      workflowRunId: run.id,
+      stepKey: "step-fail",
+      workerId: "worker-1",
+      leaseDurationMs: 10_000
+    });
+    expect(retryClaim.status).toBe("RETRY_WAIT");
+  });
+
+  it("records terminal step attempt failure and transitions to FAILED", async () => {
+    const run = await createWorkflowRun(db, {
+      tenantId,
+      workflowName: "fail-wf-terminal",
+      workflowVersion: "v1",
+      input: {}
+    });
+
+    const claim = await claimStepAttempt(db, {
+      tenantId,
+      workflowRunId: run.id,
+      stepKey: "step-term-fail",
+      workerId: "worker-1",
+      leaseDurationMs: 10_000
+    });
+    if (claim.status !== "RUNNING") throw new Error("claim failed");
+
+    await failStepAttempt(db, {
+      tenantId,
+      workflowRunId: run.id,
+      stepExecutionId: claim.stepExecutionId,
+      attemptId: claim.attemptId,
+      error: { message: "Fatal error" },
+      isTerminalFailure: true
+    });
+
+    const step = await db.stepExecution.findUnique({
+      where: { id: claim.stepExecutionId }
+    });
+    expect(step?.status).toBe("FAILED");
+    expect(step?.failedAt).not.toBeNull();
+
+    const attempt = await db.stepAttempt.findUnique({
+      where: { id: claim.attemptId }
+    });
+    expect(attempt?.status).toBe("FAILED");
+    expect(attempt?.errorMessage).toBe("Fatal error");
   });
 });

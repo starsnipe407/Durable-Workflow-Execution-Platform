@@ -5,6 +5,7 @@ import type {
   ClaimStepAttemptParams,
   ClaimStepAttemptResult,
   CompleteStepAttemptParams,
+  FailStepAttemptParams,
   RenewAttemptLeaseParams
 } from "../types.js";
 
@@ -21,12 +22,14 @@ export async function claimStepAttempt(
         id: string;
         status: string;
         output: unknown;
+        error: unknown;
         attempt_count: number;
         active_attempt_id: string | null;
+        next_retry_at: Date | null;
         lease_expires_at: Date | null;
       }>
     >`
-      SELECT s.id, s.status, s.output, s.attempt_count, s.active_attempt_id, a.lease_expires_at
+      SELECT s.id, s.status, s.output, s.error, s.attempt_count, s.active_attempt_id, s.next_retry_at, a.lease_expires_at
       FROM step_executions s
       LEFT JOIN step_attempts a ON a.id = s.active_attempt_id
       WHERE s.workflow_run_id = ${workflowRunId}::uuid AND s.step_key = ${stepKey}
@@ -41,8 +44,18 @@ export async function claimStepAttempt(
     }
 
     const now = new Date();
+
+    // Check if step is in RETRY_WAIT and delay has not elapsed
+    if (existing && existing.status === "RETRY_WAIT" && existing.next_retry_at && new Date(existing.next_retry_at) > now) {
+      return {
+        status: "RETRY_WAIT",
+        nextRetryAt: new Date(existing.next_retry_at),
+        error: existing.error ?? undefined
+      };
+    }
+
     // Check if active lease is still valid
-    if (existing && existing.active_attempt_id && existing.lease_expires_at && existing.lease_expires_at > now) {
+    if (existing && existing.status === "RUNNING" && existing.active_attempt_id && existing.lease_expires_at && existing.lease_expires_at > now) {
       return {
         status: "LOCKED",
         activeAttemptId: existing.active_attempt_id,
@@ -181,6 +194,89 @@ export async function renewAttemptLease(
     data: {
       heartbeatAt: now,
       leaseExpiresAt: newLease
+    }
+  });
+}
+
+export async function failStepAttempt(
+  db: PrismaClient,
+  params: FailStepAttemptParams
+): Promise<void> {
+  const {
+    tenantId,
+    workflowRunId,
+    stepExecutionId,
+    attemptId,
+    error,
+    timedOut = false,
+    retryDelayMs = null,
+    nextRetryAt = null,
+    isTerminalFailure
+  } = params;
+
+  await db.$transaction(async (tx) => {
+    // 1. Update attempt record
+    await tx.stepAttempt.update({
+      where: { id: attemptId },
+      data: {
+        status: timedOut ? "TIMED_OUT" : "FAILED",
+        errorMessage: error.message,
+        errorType: error.type ?? (timedOut ? "TimeoutError" : "Error"),
+        errorMetadata: (error.metadata ?? {}) as any,
+        retryDelayMs,
+        timedOut,
+        finishedAt: new Date()
+      }
+    });
+
+    // 2. Record STEP_ATTEMPT_FAILED event
+    await recordExecutionEvent(tx, {
+      tenantId,
+      workflowRunId,
+      stepExecutionId,
+      stepAttemptId: attemptId,
+      eventType: "STEP_ATTEMPT_FAILED",
+      payload: { error: error.message, timedOut, retryDelayMs }
+    });
+
+    // 3. Update step_executions
+    if (isTerminalFailure) {
+      await tx.stepExecution.update({
+        where: { id: stepExecutionId },
+        data: {
+          status: "FAILED",
+          error: error as any,
+          failedAt: new Date()
+        }
+      });
+
+      await recordExecutionEvent(tx, {
+        tenantId,
+        workflowRunId,
+        stepExecutionId,
+        eventType: "STEP_FAILED",
+        payload: { error: error.message }
+      });
+    } else {
+      await tx.stepExecution.update({
+        where: { id: stepExecutionId },
+        data: {
+          status: "RETRY_WAIT",
+          nextRetryAt,
+          error: error as any
+        }
+      });
+
+      await recordExecutionEvent(tx, {
+        tenantId,
+        workflowRunId,
+        stepExecutionId,
+        eventType: "STEP_RETRY_SCHEDULED",
+        payload: {
+          nextRetryAt: nextRetryAt ? nextRetryAt.toISOString() : null,
+          retryDelayMs
+        }
+      });
     }
   });
 }

@@ -18,7 +18,20 @@ export interface ClaimStepAttemptParams {
 export type ClaimStepAttemptResult =
   | { status: "COMPLETED"; output: unknown }
   | { status: "RUNNING"; attemptId: string; attemptNumber: number; stepExecutionId: string }
-  | { status: "LOCKED"; activeAttemptId: string; leaseExpiresAt: Date };
+  | { status: "LOCKED"; activeAttemptId: string; leaseExpiresAt: Date }
+  | { status: "RETRY_WAIT"; nextRetryAt: Date; error?: unknown };
+
+export interface FailStepAttemptParams {
+  tenantId: string;
+  workflowRunId: string;
+  stepExecutionId: string;
+  attemptId: string;
+  error: { message: string; type?: string; metadata?: Record<string, unknown> };
+  timedOut?: boolean;
+  retryDelayMs?: number | null;
+  nextRetryAt?: Date | null;
+  isTerminalFailure: boolean;
+}
 
 export interface CompleteStepAttemptParams {
   tenantId: string;
