@@ -1,9 +1,13 @@
-import { Worker, type ConnectionOptions, type Job } from "bullmq";
+import { Worker, type ConnectionOptions, type Job, type Queue } from "bullmq";
 import type { PrismaClient } from "@durable/database";
 import { recordExecutionEvent } from "@durable/database";
 import { generateId } from "@durable/shared";
 import { WorkflowExecutor } from "@durable/workflow-sdk";
-import { WORKFLOW_QUEUE_NAME } from "./queue.js";
+import {
+  WORKFLOW_QUEUE_NAME,
+  createWorkflowQueue,
+  enqueueWorkflowRun,
+} from "./queue.js";
 import type { WorkflowRunJobData } from "./types.js";
 import type { WorkflowRegistry } from "./registry.js";
 
@@ -13,10 +17,14 @@ export interface WorkflowWorkerOptions {
   workerId?: string;
   connectionOrUrl?: string | ConnectionOptions;
   concurrency?: number;
+  queue?: Queue<WorkflowRunJobData>;
+  queueName?: string;
 }
 
 export class WorkflowWorker {
   public readonly worker: Worker<WorkflowRunJobData>;
+  public readonly queue: Queue<WorkflowRunJobData>;
+  private readonly ownsQueue: boolean;
   private readonly db: PrismaClient;
   private readonly registry: WorkflowRegistry;
   private readonly workerId: string;
@@ -37,8 +45,19 @@ export class WorkflowWorker {
     const connection: ConnectionOptions =
       typeof resolved === "string" ? { url: resolved } : resolved;
 
+    const queueName =
+      options.queue?.name ?? options.queueName ?? WORKFLOW_QUEUE_NAME;
+
+    if (options.queue) {
+      this.queue = options.queue;
+      this.ownsQueue = false;
+    } else {
+      this.queue = createWorkflowQueue(resolved, queueName);
+      this.ownsQueue = true;
+    }
+
     this.worker = new Worker<WorkflowRunJobData>(
-      WORKFLOW_QUEUE_NAME,
+      queueName,
       async (job) => this.processJob(job),
       {
         connection,
@@ -92,10 +111,31 @@ export class WorkflowWorker {
       });
     }
 
-    await this.executor.execute(workflow, runId);
+    const output = await this.executor.execute(workflow, runId);
+
+    if (output === undefined) {
+      const retryStep = await this.db.stepExecution.findFirst({
+        where: {
+          workflowRunId: runId,
+          status: "RETRY_WAIT",
+          nextRetryAt: { not: null },
+        },
+        orderBy: {
+          nextRetryAt: "asc",
+        },
+      });
+
+      if (retryStep?.nextRetryAt) {
+        const delay = Math.max(0, retryStep.nextRetryAt.getTime() - Date.now());
+        await enqueueWorkflowRun(this.queue, job.data, { delay });
+      }
+    }
   }
 
   async close(): Promise<void> {
     await this.worker.close();
+    if (this.ownsQueue) {
+      await this.queue.close();
+    }
   }
 }

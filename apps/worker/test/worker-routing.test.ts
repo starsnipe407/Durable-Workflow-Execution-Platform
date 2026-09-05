@@ -52,7 +52,7 @@ describe("WorkflowWorker Routing", () => {
     }
   });
 
-  it("Terminal run no-op: if a run is already COMPLETED or CANCELLED, does not run workflow or modify run", async () => {
+  it("Terminal run no-op: if a run is already COMPLETED, CANCELLED, or FAILED, does not run workflow or modify run", async () => {
     let executionCount = 0;
     const testWorkflow = defineWorkflow(
       { name: "terminal-wf", version: "v1" },
@@ -126,6 +126,38 @@ describe("WorkflowWorker Routing", () => {
       where: { id: cancelledRun.id },
     });
     expect(runAfterCancelled?.status).toBe("CANCELLED");
+
+    // Case 3: FAILED run
+    const failedRun = await createWorkflowRun(db, {
+      tenantId,
+      workflowName: "terminal-wf",
+      workflowVersion: "v1",
+      input: { initial: "data" },
+    });
+    await db.workflowRun.update({
+      where: { id: failedRun.id },
+      data: {
+        status: "FAILED",
+        failedAt: new Date("2026-01-01T00:00:00Z"),
+        error: { message: "Original failure" },
+      },
+    });
+
+    await worker.processJob({
+      data: {
+        tenantId,
+        runId: failedRun.id,
+        workflowName: "terminal-wf",
+        workflowVersion: "v1",
+      },
+    } as any);
+
+    expect(executionCount).toBe(0);
+    const runAfterFailed = await db.workflowRun.findUnique({
+      where: { id: failedRun.id },
+    });
+    expect(runAfterFailed?.status).toBe("FAILED");
+    expect(runAfterFailed?.error).toEqual({ message: "Original failure" });
   });
 
   it("Missing workflow version: sets status=PENDING, blockedReason=WORKFLOW_VERSION_UNAVAILABLE and records execution event without throwing", async () => {

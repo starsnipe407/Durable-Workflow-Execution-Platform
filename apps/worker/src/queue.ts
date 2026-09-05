@@ -5,13 +5,14 @@ export const WORKFLOW_QUEUE_NAME = "workflow-runs";
 export const WORKFLOW_JOB_NAME = "workflow-replay";
 
 export function createWorkflowQueue(
-  connectionOrUrl?: string | ConnectionOptions
+  connectionOrUrl?: string | ConnectionOptions,
+  queueName: string = WORKFLOW_QUEUE_NAME
 ): Queue<WorkflowRunJobData> {
   const resolved = connectionOrUrl ?? (process.env.REDIS_URL || "redis://localhost:6380");
   const connection: ConnectionOptions =
     typeof resolved === "string" ? { url: resolved } : resolved;
 
-  return new Queue<WorkflowRunJobData>(WORKFLOW_QUEUE_NAME, {
+  return new Queue<WorkflowRunJobData>(queueName, {
     connection,
   });
 }
