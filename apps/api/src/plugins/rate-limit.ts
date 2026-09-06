@@ -128,11 +128,16 @@ export function createRateLimitPreHandler(options: RateLimitOptions) {
   };
 }
 
+export const DEFAULT_EXEMPT_ROUTES = ['/runs/:runId/events', '/runs/:id/events'];
+
 export function rateLimitPlugin(app: FastifyInstance, options: RateLimitOptions) {
   const handler = createRateLimitPreHandler(options);
+  const exempt = options.exemptRoutes
+    ? [...new Set([...DEFAULT_EXEMPT_ROUTES, ...options.exemptRoutes])]
+    : DEFAULT_EXEMPT_ROUTES;
 
   app.addHook('onRoute', (routeOptions) => {
-    if (options.exemptRoutes && options.exemptRoutes.includes(routeOptions.url)) {
+    if (exempt.includes(routeOptions.url)) {
       return;
     }
 

@@ -18,6 +18,11 @@ export function authenticateApiKey(prisma: PrismaClient) {
       }
     }
 
+    const query = request.query as Record<string, unknown> | undefined;
+    if (!apiKey && query?.apiKey && typeof query.apiKey === 'string') {
+      apiKey = query.apiKey;
+    }
+
     if (!apiKey) {
       return reply.status(401).send({ error: 'Unauthorized', message: 'Missing API key' });
     }

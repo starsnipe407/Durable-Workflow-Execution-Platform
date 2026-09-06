@@ -2,7 +2,7 @@ import { Worker, type ConnectionOptions, type Job, type Queue } from "bullmq";
 import { Redis } from "ioredis";
 import type { PrismaClient, WorkflowRunStatus } from "@durable/database";
 import { recordExecutionEvent } from "@durable/database";
-import { generateId } from "@durable/shared";
+import { generateId, publishRunEventWakeup } from "@durable/shared";
 import { WorkflowExecutor } from "@durable/workflow-sdk";
 import {
   WORKFLOW_QUEUE_NAME,
@@ -43,22 +43,21 @@ export class WorkflowWorker {
   private readonly redisClient?: Redis;
   private readonly ownsRedis: boolean;
   private readonly concurrencyRetryDelayMs: number;
+  private readonly publisher?: { publish(channel: string, message: string): Promise<number> };
 
   constructor(options: WorkflowWorkerOptions) {
     this.db = options.db;
     this.registry = options.registry;
     this.workerId = options.workerId ?? generateId("worker");
     this.concurrencyRetryDelayMs = options.concurrencyRetryDelayMs ?? 500;
-    this.executor = new WorkflowExecutor({
-      db: this.db,
-      workerId: this.workerId,
-    });
 
-    if (options.concurrencyCoordinator) {
-      this.concurrencyCoordinator = options.concurrencyCoordinator;
+    if (options.redis) {
+      this.redisClient = options.redis;
       this.ownsRedis = false;
-    } else if (options.redis) {
-      this.concurrencyCoordinator = new ConcurrencyCoordinator(options.redis);
+      this.concurrencyCoordinator =
+        options.concurrencyCoordinator ?? new ConcurrencyCoordinator(options.redis);
+    } else if (options.concurrencyCoordinator) {
+      this.concurrencyCoordinator = options.concurrencyCoordinator;
       this.ownsRedis = false;
     } else {
       if (typeof options.connectionOrUrl === "string") {
@@ -76,6 +75,18 @@ export class WorkflowWorker {
       this.ownsRedis = true;
       this.concurrencyCoordinator = new ConcurrencyCoordinator(this.redisClient);
     }
+
+    this.publisher = this.redisClient || options.redis;
+
+    this.executor = new WorkflowExecutor({
+      db: this.db,
+      workerId: this.workerId,
+      onEvent: async (runId) => {
+        if (this.publisher) {
+          await publishRunEventWakeup(this.publisher, runId);
+        }
+      },
+    });
 
     const connection = resolveRedisConnection(options.connectionOrUrl);
     const queueName =
@@ -129,6 +140,9 @@ export class WorkflowWorker {
           payload: { workflowName, workflowVersion },
         });
       });
+      if (this.publisher) {
+        await publishRunEventWakeup(this.publisher, runId);
+      }
       return;
     }
 

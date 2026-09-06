@@ -1,7 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { PrismaClient, Prisma } from '@durable/database';
 import { Queue } from 'bullmq';
+import { Redis } from 'ioredis';
 import { enqueueWorkflowRun } from '@durable/worker';
+import { publishRunEventWakeup } from '@durable/shared';
 import { z } from 'zod';
 import { authenticateApiKey } from '../plugins/auth';
 
@@ -13,7 +15,7 @@ const ingestEventSchema = z.object({
 
 export function eventsRoutes(
   app: FastifyInstance,
-  options: { prisma: PrismaClient; queue?: Queue }
+  options: { prisma: PrismaClient; queue?: Queue; redis?: Redis }
 ) {
   app.post(
     '/events',
@@ -111,6 +113,12 @@ export function eventsRoutes(
                 { jobId: `run_${run.id}` }
               )
             )
+          );
+        }
+
+        if (options.redis) {
+          await Promise.all(
+            createdRuns.map((run) => publishRunEventWakeup(options.redis!, run.id))
           );
         }
 

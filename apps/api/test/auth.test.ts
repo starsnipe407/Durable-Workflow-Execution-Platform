@@ -114,4 +114,28 @@ describe('API Key Authentication Plugin', () => {
     await prisma.apiKey.deleteMany({ where: { tenantId: tenant.id } });
     await prisma.tenant.delete({ where: { id: tenant.id } });
   });
+
+  it('should populate request.tenantId and return 200 for valid ?apiKey= query parameter', async () => {
+    const tenant = await prisma.tenant.create({
+      data: { name: 'Test Tenant Valid Query Key' },
+    });
+    const key = 'valid_query_key_123';
+    await prisma.apiKey.create({
+      data: {
+        keyHash: hashApiKey(key),
+        tenantId: tenant.id,
+        label: 'test',
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/auth/test?apiKey=${key}`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ tenantId: tenant.id });
+
+    await prisma.apiKey.deleteMany({ where: { tenantId: tenant.id } });
+    await prisma.tenant.delete({ where: { id: tenant.id } });
+  });
 });

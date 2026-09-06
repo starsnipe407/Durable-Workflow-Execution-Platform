@@ -1,9 +1,12 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { PrismaClient, WorkflowRunStatus } from '@durable/database';
 import { Queue } from 'bullmq';
+import { Redis } from 'ioredis';
 import { enqueueWorkflowRun } from '@durable/worker';
+import { publishRunEventWakeup } from '@durable/shared';
 import { authenticateApiKey } from '../plugins/auth';
+import { RunEventsMultiplexer } from '../services/run-events-multiplexer';
 
 const createRunSchema = z.object({
   workflowName: z.string().min(1),
@@ -15,7 +18,12 @@ const createRunSchema = z.object({
 
 export function runsRoutes(
   app: FastifyInstance,
-  options: { prisma: PrismaClient; queue?: Queue }
+  options: {
+    prisma: PrismaClient;
+    queue?: Queue;
+    redis?: Redis;
+    multiplexer?: RunEventsMultiplexer;
+  }
 ) {
   app.post('/runs', { preHandler: authenticateApiKey(options.prisma) }, async (request, reply) => {
     const parsed = createRunSchema.safeParse(request.body);
@@ -91,6 +99,10 @@ export function runsRoutes(
           },
           { jobId: 'run_' + run.id }
         );
+      }
+
+      if (options.redis) {
+        await publishRunEventWakeup(options.redis, run.id);
       }
 
       return reply.status(201).send(run);
@@ -214,6 +226,10 @@ export function runsRoutes(
       );
     }
 
+    if (options.redis) {
+      await publishRunEventWakeup(options.redis, updatedRun.id);
+    }
+
     return reply.status(200).send(updatedRun);
   });
 
@@ -262,6 +278,165 @@ export function runsRoutes(
       return updated;
     });
 
+    if (options.redis) {
+      await publishRunEventWakeup(options.redis, updatedRun.id);
+    }
+
     return reply.status(200).send(updatedRun);
   });
+
+  const handleEventsStream = async (request: FastifyRequest, reply: FastifyReply) => {
+    const runId = (request.params as any).runId || (request.params as any).id;
+    const run = await options.prisma.workflowRun.findUnique({
+      where: {
+        id: runId,
+        tenantId: request.tenantId,
+      },
+      select: { id: true, status: true },
+    });
+
+    if (!run) {
+      return reply.status(404).send({ error: 'Not Found', message: 'Workflow run not found' });
+    }
+
+    // Read Last-Event-ID header or ?lastEventId query param
+    const rawLastEventId = request.headers['last-event-id'] || (request.query as any)?.lastEventId;
+    let lastSentId: bigint | undefined;
+    if (rawLastEventId && typeof rawLastEventId === 'string' && /^\d+$/.test(rawLastEventId.trim())) {
+      lastSentId = BigInt(rawLastEventId.trim());
+    }
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    reply.raw.flushHeaders?.();
+
+    const keepaliveTimer = setInterval(() => {
+      if (!reply.raw.writableEnded) {
+        reply.raw.write(': keepalive\n\n');
+      }
+    }, 15_000);
+
+    let isFetching = false;
+    let hasPendingWakeup = false;
+    let closed = false;
+    let unsubscribe: (() => Promise<void>) | undefined;
+
+    const cleanup = async () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(keepaliveTimer);
+      if (unsubscribe) {
+        await unsubscribe().catch(() => {});
+        unsubscribe = undefined;
+      }
+    };
+
+    request.raw.on('close', () => {
+      cleanup().catch(() => {});
+    });
+
+    const fetchAndFlush = async () => {
+      if (closed || reply.raw.writableEnded) return;
+      if (isFetching) {
+        hasPendingWakeup = true;
+        return;
+      }
+      isFetching = true;
+
+      try {
+        do {
+          hasPendingWakeup = false;
+          const events = await options.prisma.executionEvent.findMany({
+            where: {
+              workflowRunId: runId,
+              ...(lastSentId !== undefined ? { id: { gt: lastSentId } } : {}),
+            },
+            orderBy: { id: 'asc' },
+          });
+
+          for (const event of events) {
+            if (closed || reply.raw.writableEnded) return;
+            lastSentId = event.id;
+            const payload = JSON.stringify({
+              id: event.id.toString(),
+              tenantId: event.tenantId,
+              workflowRunId: event.workflowRunId,
+              stepExecutionId: event.stepExecutionId,
+              stepAttemptId: event.stepAttemptId,
+              eventType: event.eventType,
+              payload: event.payload,
+              createdAt: event.createdAt.toISOString(),
+            });
+            reply.raw.write(`id: ${event.id.toString()}\nevent: ${event.eventType}\ndata: ${payload}\n\n`);
+
+            if (
+              event.eventType === 'WORKFLOW_COMPLETED' ||
+              event.eventType === 'WORKFLOW_FAILED' ||
+              event.eventType === 'WORKFLOW_CANCELLED'
+            ) {
+              await cleanup();
+              if (!reply.raw.writableEnded) {
+                reply.raw.end();
+              }
+              return;
+            }
+          }
+
+          // Check if workflow run became terminal even if terminal event wasn't in this batch
+          const currentRun = await options.prisma.workflowRun.findUnique({
+            where: { id: runId },
+            select: { status: true },
+          });
+          if (
+            currentRun &&
+            ['COMPLETED', 'FAILED', 'CANCELLED'].includes(currentRun.status)
+          ) {
+            const remaining = await options.prisma.executionEvent.count({
+              where: {
+                workflowRunId: runId,
+                ...(lastSentId !== undefined ? { id: { gt: lastSentId } } : {}),
+              },
+            });
+            if (remaining === 0) {
+              await cleanup();
+              if (!reply.raw.writableEnded) {
+                reply.raw.end();
+              }
+              return;
+            }
+          }
+        } while (hasPendingWakeup && !closed && !reply.raw.writableEnded);
+      } catch (err) {
+        await cleanup();
+        if (!reply.raw.writableEnded) {
+          reply.raw.end();
+        }
+      } finally {
+        isFetching = false;
+      }
+    };
+
+    if (options.multiplexer) {
+      try {
+        unsubscribe = await options.multiplexer.subscribe(runId, () => {
+          fetchAndFlush().catch(() => {});
+        });
+      } catch {
+        // subscription error handling
+      }
+    }
+
+    await fetchAndFlush();
+
+    return new Promise<void>((resolve) => {
+      reply.raw.on('finish', resolve);
+      request.raw.on('close', resolve);
+    });
+  };
+
+  app.get('/runs/:runId/events', { preHandler: authenticateApiKey(options.prisma) }, handleEventsStream);
 }

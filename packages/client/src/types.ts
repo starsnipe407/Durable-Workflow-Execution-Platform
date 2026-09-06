@@ -53,3 +53,20 @@ export class WorkflowClientError extends Error {
     this.errorBody = errorBody;
   }
 }
+
+export interface WorkflowExecutionEvent {
+  id: string;
+  tenantId: string;
+  workflowRunId: string;
+  stepExecutionId?: string | null;
+  stepAttemptId?: string | null;
+  eventType: string;
+  payload: unknown;
+  createdAt: string;
+}
+
+export interface StreamEventsOptions {
+  lastEventId?: string;
+  signal?: AbortSignal;
+}
+

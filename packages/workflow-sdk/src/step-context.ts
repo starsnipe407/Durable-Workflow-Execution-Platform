@@ -11,6 +11,7 @@ export interface StepContextOptions {
   workerId: string;
   leaseDurationMs: number;
   seenKeys: Set<string>;
+  onEvent?: (runId: string) => Promise<void> | void;
 }
 
 export class StepContextImpl implements StepContext {
@@ -20,6 +21,7 @@ export class StepContextImpl implements StepContext {
   private readonly workerId: string;
   private readonly leaseDurationMs: number;
   private readonly seenKeys: Set<string>;
+  private readonly onEvent?: (runId: string) => Promise<void> | void;
   private readonly inFlightPromises: Set<Promise<unknown>> = new Set();
 
   constructor(options: StepContextOptions) {
@@ -29,6 +31,7 @@ export class StepContextImpl implements StepContext {
     this.workerId = options.workerId;
     this.leaseDurationMs = options.leaseDurationMs;
     this.seenKeys = options.seenKeys;
+    this.onEvent = options.onEvent;
   }
 
   async settleInFlight(): Promise<void> {
@@ -82,6 +85,8 @@ export class StepContextImpl implements StepContext {
       throw new WorkflowSuspendedError(`Step "${key}" is in RETRY_WAIT until ${claim.nextRetryAt.toISOString()}.`);
     }
 
+    await this.onEvent?.(this.workflowRunId);
+
     const maxRetries = options.retries ?? 3; // 1 initial + 3 retries
     const timeoutMs = options.timeoutMs;
 
@@ -124,6 +129,8 @@ export class StepContextImpl implements StepContext {
         isTerminalFailure
       });
 
+      await this.onEvent?.(this.workflowRunId);
+
       if (isTerminalFailure) {
         throw err;
       }
@@ -141,6 +148,8 @@ export class StepContextImpl implements StepContext {
       attemptId: claim.attemptId,
       output
     });
+
+    await this.onEvent?.(this.workflowRunId);
 
     return output;
   }

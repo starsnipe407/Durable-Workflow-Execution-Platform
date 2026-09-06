@@ -8,17 +8,20 @@ export interface WorkflowExecutorOptions {
   db: PrismaClient;
   workerId: string;
   leaseDurationMs?: number;
+  onEvent?: (runId: string) => Promise<void> | void;
 }
 
 export class WorkflowExecutor {
   private readonly db: PrismaClient;
   private readonly workerId: string;
   private readonly leaseDurationMs: number;
+  private readonly onEvent?: (runId: string) => Promise<void> | void;
 
   constructor(options: WorkflowExecutorOptions) {
     this.db = options.db;
     this.workerId = options.workerId;
     this.leaseDurationMs = options.leaseDurationMs ?? 30_000;
+    this.onEvent = options.onEvent;
   }
 
   async execute<TInput, TOutput>(
@@ -52,6 +55,7 @@ export class WorkflowExecutor {
           payload: { workerId: this.workerId, startedAt: now }
         });
       });
+      await this.onEvent?.(runId);
     }
 
     const seenKeys = new Set<string>();
@@ -61,7 +65,8 @@ export class WorkflowExecutor {
       workflowRunId: runId,
       workerId: this.workerId,
       leaseDurationMs: this.leaseDurationMs,
-      seenKeys
+      seenKeys,
+      onEvent: this.onEvent
     });
 
     try {
@@ -89,6 +94,7 @@ export class WorkflowExecutor {
           payload: { output }
         });
       });
+      await this.onEvent?.(runId);
 
       return output;
     } catch (err) {
@@ -118,6 +124,7 @@ export class WorkflowExecutor {
           payload: { error: errorMessage }
         });
       });
+      await this.onEvent?.(runId);
 
       throw err;
     }
