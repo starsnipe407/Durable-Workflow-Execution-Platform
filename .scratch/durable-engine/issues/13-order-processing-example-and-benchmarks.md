@@ -5,10 +5,10 @@ The canonical end-to-end reference application (examples/order-processing) demon
 
 **Blocked by:** 09: Event Ingestion and Bindings, 10: Distributed Concurrency and Rate Limiting, 12: Next.js Observability Dashboard
 
-**Status:** in-progress
+**Status:** completed
 
-- [ ] Implement process-order workflow covering sequential steps, retries, idempotency keys, and parallel sibling steps.
-- [ ] Create benchmark harness measuring completed workflows/sec across worker scaling (1, 2, 4, 8 workers).
-- [ ] Create chaos benchmark measuring crash recovery latency under worker termination.
-- [ ] Create Redis flush benchmark verifying 0 lost durable runs and 0 duplicate runs after reconciliation.
-- [ ] Save all benchmark output and environment metadata as reproducible artifacts.
+- [x] Implement process-order workflow covering sequential steps, retries, idempotency keys, and parallel sibling steps.
+- [x] Create benchmark harness measuring completed workflows/sec across worker scaling (1, 2, 4, 8 workers).
+- [x] Create chaos benchmark measuring crash recovery latency under worker termination.
+- [x] Create Redis flush benchmark verifying 0 lost durable runs and 0 duplicate runs after reconciliation.
+- [x] Save all benchmark output and environment metadata as reproducible artifacts.
