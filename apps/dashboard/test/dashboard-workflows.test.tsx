@@ -252,4 +252,64 @@ describe('Dashboard & Workflows UI Components (TDD)', () => {
     expect(screen.getByText('invoice-billing')).toBeInTheDocument();
     expect(screen.queryByText('user-onboarding')).not.toBeInTheDocument();
   });
+
+  it('6. DashboardOverview renders error banner and placeholder KPI values when /api/metrics fails', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/metrics')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+        });
+      }
+      if (url.includes('/api/runs')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ runs: [] }),
+        });
+      }
+      return Promise.reject(new Error(`Unhandled URL: ${url}`));
+    });
+
+    renderWithQuery(<DashboardOverview />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/failed to load platform metrics/i)).toBeInTheDocument();
+    });
+
+    // Metric cards show fallback '—'
+    const fallbacks = screen.getAllByText('—');
+    expect(fallbacks.length).toBe(4);
+  });
+
+  it('7. DashboardOverview renders error row in recent executions table when /api/runs fails', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/metrics')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            systemStatus: 'healthy',
+            activeRuns: 0,
+            completedRuns: 0,
+            failedRuns: 0,
+            cancelledRuns: 0,
+            totalRuns: 0,
+          }),
+        });
+      }
+      if (url.includes('/api/runs')) {
+        return Promise.resolve({
+          ok: false,
+          status: 502,
+        });
+      }
+      return Promise.reject(new Error(`Unhandled URL: ${url}`));
+    });
+
+    renderWithQuery(<DashboardOverview />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/failed to load recent executions\. please refresh\./i)).toBeInTheDocument();
+    });
+  });
 });
+

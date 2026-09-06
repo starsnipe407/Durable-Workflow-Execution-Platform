@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Workflow, Zap, Layers, RefreshCw } from 'lucide-react';
+import { Search, Workflow, Zap, RefreshCw } from 'lucide-react';
 import type { WorkflowsResponse, WorkflowDefinitionItem } from '@/lib/types';
 
 function formatConcurrency(concurrency?: { globalLimit?: number; perKey: boolean }): string {
