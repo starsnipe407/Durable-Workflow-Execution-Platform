@@ -57,15 +57,15 @@ Implement distributed token-bucket rate limiting at the Fastify API boundary (fa
 - Modify: `apps/api/src/app.ts`
 - Test: `apps/api/test/rate-limit.test.ts`
 
-- [ ] **Step 1: Write failing tests for API rate limiting & fail-closed behavior (RED)**
+- [x] **Step 1: Write failing tests for API rate limiting & fail-closed behavior (RED)**
   - Test rapid requests within capacity return HTTP 200/201.
   - Test requests exceeding capacity return HTTP 429 with `Retry-After` header.
   - Test tokens replenish over time allowing subsequent requests.
   - Test fail-closed: simulate Redis unavailability and verify requests return HTTP 503.
-- [ ] **Step 2: Run test to verify it fails (RED)**
-- [ ] **Step 3: Implement Redis Lua token-bucket rate limiter in `apps/api/src/plugins/rate-limit.ts` and mount in `apps/api/src/app.ts`**
-- [ ] **Step 4: Run test to verify it passes (GREEN)**
-- [ ] **Step 5: Run build and commit**
+- [x] **Step 2: Run test to verify it fails (RED)**
+- [x] **Step 3: Implement Redis Lua token-bucket rate limiter in `apps/api/src/plugins/rate-limit.ts` and mount in `apps/api/src/app.ts`**
+- [x] **Step 4: Run test to verify it passes (GREEN)**
+- [x] **Step 5: Run build and commit**
 
 ---
 
@@ -77,14 +77,14 @@ Implement distributed token-bucket rate limiting at the Fastify API boundary (fa
 - Modify: `apps/worker/src/index.ts`
 - Test: `apps/worker/test/concurrency.test.ts`
 
-- [ ] **Step 1: Write failing tests for distributed concurrency coordinator (RED)**
+- [x] **Step 1: Write failing tests for distributed concurrency coordinator (RED)**
   - Test global concurrency limit: with limit 2, 5 concurrent runs only allow 2 active simultaneously; remaining 3 delayed until slots freed.
   - Test per-key partition concurrency limit: with keyLimit 1 per customer, 2 runs for customer A and 2 for customer B; customer A runs serialize, while customer A and B run in parallel.
   - Test lease TTL & release: slots are cleanly released on workflow completion, and abandoned leases expire after TTL without deadlocking.
-- [ ] **Step 2: Run test to verify it fails (RED)**
-- [ ] **Step 3: Implement `ConcurrencyCoordinator` in `apps/worker/src/concurrency.ts` and integrate into `WorkflowWorker`**
-- [ ] **Step 4: Run test to verify it passes (GREEN)**
-- [ ] **Step 5: Run build and commit**
+- [x] **Step 2: Run test to verify it fails (RED)**
+- [x] **Step 3: Implement `ConcurrencyCoordinator` in `apps/worker/src/concurrency.ts` and integrate into `WorkflowWorker`**
+- [x] **Step 4: Run test to verify it passes (GREEN)**
+- [x] **Step 5: Run build and commit**
 
 ---
 
@@ -92,7 +92,7 @@ Implement distributed token-bucket rate limiting at the Fastify API boundary (fa
 **Files:**
 - Modify: `.scratch/durable-engine/issues/10-distributed-concurrency-and-rate-limiting.md`
 
-- [ ] **Step 1: Run full monorepo test suite across all workspace packages**
-- [ ] **Step 2: Run full monorepo build (`pnpm build`)**
-- [ ] **Step 3: Update Ticket 10 issue file with completed status, checklist, and Producer-to-Consumer verification**
-- [ ] **Step 4: Stage and commit**
+- [x] **Step 1: Run full monorepo test suite across all workspace packages**
+- [x] **Step 2: Run full monorepo build (`pnpm build`)**
+- [x] **Step 3: Update Ticket 10 issue file with completed status, checklist, and Producer-to-Consumer verification**
+- [x] **Step 4: Stage and commit**
