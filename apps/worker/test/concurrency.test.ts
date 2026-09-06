@@ -306,7 +306,7 @@ describe("Distributed Concurrency Coordinator", () => {
     expect(slot2.acquired).toBe(true);
 
     // Verify Redis has 2 members
-    const globalKey = `concurrency:global:${wfName}`;
+    const globalKey = `concurrency:global:default:${wfName}`;
     let members = await redis.zrange(globalKey, 0, -1);
     expect(members).toContain("run-clean-1");
     expect(members).toContain("run-clean-2");
@@ -350,5 +350,86 @@ describe("Distributed Concurrency Coordinator", () => {
 
     expect(customWorker).toBeDefined();
     await customWorker.close();
+  });
+
+  it("isolates global concurrency limits across distinct tenants", async () => {
+    const coordinator = new ConcurrencyCoordinator(redis);
+    const wfName = "tenant-isolation-wf";
+
+    // Tenant A acquires slot with limit: 1
+    const slotA = await coordinator.tryAcquire(
+      "run-tenant-a-1",
+      { limit: 1, ttlSeconds: 30 },
+      {},
+      wfName,
+      "tenant-alpha"
+    );
+    expect(slotA.acquired).toBe(true);
+
+    // Tenant A tries second slot -> denied
+    const slotA2 = await coordinator.tryAcquire(
+      "run-tenant-a-2",
+      { limit: 1, ttlSeconds: 30 },
+      {},
+      wfName,
+      "tenant-alpha"
+    );
+    expect(slotA2.acquired).toBe(false);
+
+    // Tenant B acquires slot for same workflow name with limit: 1 -> allowed because different tenant!
+    const slotB = await coordinator.tryAcquire(
+      "run-tenant-b-1",
+      { limit: 1, ttlSeconds: 30 },
+      {},
+      wfName,
+      "tenant-beta"
+    );
+    expect(slotB.acquired).toBe(true);
+
+    await slotA.release();
+    await slotB.release();
+    await coordinator.close();
+  });
+
+  it("supports run.concurrencyKey as partition key when workflow has no key selector", async () => {
+    const coordinator = new ConcurrencyCoordinator(redis);
+    const wfName = "fallback-key-wf";
+
+    // First run with concurrencyKey: "user-999"
+    const slot1 = await coordinator.tryAcquire(
+      "run-fb-1",
+      {},
+      {},
+      wfName,
+      "tenant-1",
+      "user-999"
+    );
+    expect(slot1.acquired).toBe(true);
+
+    // Second run with same concurrencyKey -> denied (keyLimit defaults to 1)
+    const slot2 = await coordinator.tryAcquire(
+      "run-fb-2",
+      {},
+      {},
+      wfName,
+      "tenant-1",
+      "user-999"
+    );
+    expect(slot2.acquired).toBe(false);
+
+    // Third run with different concurrencyKey -> allowed
+    const slot3 = await coordinator.tryAcquire(
+      "run-fb-3",
+      {},
+      {},
+      wfName,
+      "tenant-1",
+      "user-888"
+    );
+    expect(slot3.acquired).toBe(true);
+
+    await slot1.release();
+    await slot3.release();
+    await coordinator.close();
   });
 });

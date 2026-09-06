@@ -88,27 +88,29 @@ local now = tonumber(ARGV[2])
 local ttl = tonumber(ARGV[3])
 local keyExpireSec = tonumber(ARGV[4])
 local expiry = now + ttl
-local renewed = 0
 
-if globalKey ~= "" then
-  local score = redis.call('ZSCORE', globalKey, runId)
-  if score then
-    redis.call('ZADD', globalKey, expiry, runId)
-    redis.call('EXPIRE', globalKey, keyExpireSec)
-    renewed = 1
-  end
+local hasGlobal = globalKey ~= ""
+local hasPartition = partitionKey ~= ""
+
+if hasGlobal and not redis.call('ZSCORE', globalKey, runId) then
+  return 0
 end
 
-if partitionKey ~= "" then
-  local score = redis.call('ZSCORE', partitionKey, runId)
-  if score then
-    redis.call('ZADD', partitionKey, expiry, runId)
-    redis.call('EXPIRE', partitionKey, keyExpireSec)
-    renewed = 1
-  end
+if hasPartition and not redis.call('ZSCORE', partitionKey, runId) then
+  return 0
 end
 
-return renewed
+if hasGlobal then
+  redis.call('ZADD', globalKey, 'XX', expiry, runId)
+  redis.call('EXPIRE', globalKey, keyExpireSec)
+end
+
+if hasPartition then
+  redis.call('ZADD', partitionKey, 'XX', expiry, runId)
+  redis.call('EXPIRE', partitionKey, keyExpireSec)
+end
+
+return 1
 `;
 
 export class ConcurrencyCoordinator {
@@ -123,30 +125,39 @@ export class ConcurrencyCoordinator {
     runId: string,
     config: WorkflowConcurrencyConfig<any>,
     input: any,
-    workflowName: string = "workflow"
+    workflowName: string = "workflow",
+    tenantId: string = "default",
+    fallbackKey?: string
   ): Promise<ConcurrencySlot> {
-    const partitionKeyValue =
+    const rawKey =
       typeof config.key === "function" ? config.key({ input }) : undefined;
+    const partitionKeyValue =
+      rawKey !== undefined && rawKey !== null && rawKey !== ""
+        ? rawKey
+        : fallbackKey !== undefined && fallbackKey !== null && fallbackKey !== ""
+        ? fallbackKey
+        : undefined;
 
+    const hasPartitionKey = partitionKeyValue !== undefined;
     const globalLimit = typeof config.limit === "number" && config.limit > 0 ? config.limit : 0;
     const keyLimit =
       typeof config.keyLimit === "number" && config.keyLimit > 0
         ? config.keyLimit
-        : partitionKeyValue !== undefined
+        : hasPartitionKey
         ? 1
         : 0;
 
-    if (globalLimit === 0 && (!partitionKeyValue || keyLimit === 0)) {
+    if (globalLimit === 0 && (!hasPartitionKey || keyLimit === 0)) {
       return {
         acquired: true,
         release: async () => {},
       };
     }
 
-    const globalKey = globalLimit > 0 ? `concurrency:global:${workflowName}` : "";
+    const globalKey = globalLimit > 0 ? `concurrency:global:${tenantId}:${workflowName}` : "";
     const partitionKey =
-      partitionKeyValue !== undefined && keyLimit > 0
-        ? `concurrency:key:${workflowName}:${partitionKeyValue}`
+      hasPartitionKey && keyLimit > 0
+        ? `concurrency:key:${tenantId}:${workflowName}:${partitionKeyValue}`
         : "";
 
     const ttlSeconds = config.ttlSeconds ?? 30;
@@ -180,8 +191,15 @@ export class ConcurrencyCoordinator {
     }
 
     const intervalMs = Math.max(100, Math.floor((ttlSeconds * 1000) / 2));
+    let isRenewing = false;
     const timer = setInterval(() => {
-      this.renew(runId).catch(() => {});
+      if (isRenewing) return;
+      isRenewing = true;
+      this.renew(runId)
+        .catch(() => {})
+        .finally(() => {
+          isRenewing = false;
+        });
     }, intervalMs);
     if (typeof timer.unref === "function") {
       timer.unref();
@@ -247,6 +265,7 @@ export class ConcurrencyCoordinator {
   }
 
   /**
+   * @internal
    * Clears active heartbeat timers and drops lease tracking without calling
    * release scripts on Redis, simulating an abrupt worker process crash.
    */

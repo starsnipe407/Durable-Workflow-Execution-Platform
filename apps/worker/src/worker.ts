@@ -133,16 +133,20 @@ export class WorkflowWorker {
     }
 
     const concurrency = workflow.config.concurrency;
+    const fallbackKey = run.concurrencyKey ?? undefined;
     const hasConcurrencyLimit =
-      concurrency && (concurrency.limit !== undefined || concurrency.key !== undefined);
+      (concurrency && (concurrency.limit !== undefined || concurrency.key !== undefined)) ||
+      Boolean(fallbackKey);
 
     let releaseSlot: (() => Promise<void>) | undefined;
     if (hasConcurrencyLimit) {
       const slot = await this.concurrencyCoordinator.tryAcquire(
         runId,
-        concurrency,
+        concurrency ?? {},
         run.input,
-        workflow.config.name
+        workflow.config.name,
+        run.tenantId,
+        fallbackKey
       );
       if (!slot.acquired) {
         await enqueueWorkflowRun(this.queue, job.data, {
@@ -176,7 +180,7 @@ export class WorkflowWorker {
       }
     } finally {
       if (releaseSlot) {
-        await releaseSlot();
+        await releaseSlot().catch(() => {});
       }
     }
   }

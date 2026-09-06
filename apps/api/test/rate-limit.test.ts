@@ -123,4 +123,62 @@ describe('API Rate Limiter & Fail-Closed Guard', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: 'ok' });
   });
+
+  it('6. Routes listed in exemptRoutes bypass rate limiting even when limit is exceeded', async () => {
+    const exemptTenant = await prisma.tenant.create({
+      data: { name: `Exempt Test Tenant ${crypto.randomUUID()}` },
+    });
+    const exemptApiKey = `test_exempt_key_${crypto.randomUUID()}`;
+    await prisma.apiKey.create({
+      data: {
+        keyHash: hashApiKey(exemptApiKey),
+        tenantId: exemptTenant.id,
+        label: 'test-exempt',
+      },
+    });
+
+    const exemptApp = createApp({
+      prisma,
+      redis,
+      rateLimitOptions: {
+        capacity: 1,
+        refillRate: 1,
+        exemptRoutes: ['/exempt-route'],
+      },
+    });
+
+    exemptApp.get('/exempt-route', async () => ({ exempt: true }));
+    await exemptApp.ready();
+
+    // Consume the 1 token
+    const res1 = await exemptApp.inject({
+      method: 'GET',
+      url: '/auth/test',
+      headers: { authorization: `Bearer ${exemptApiKey}` },
+    });
+    expect(res1.statusCode).toBe(200);
+
+    // Second request to normal route fails with 429
+    const res2 = await exemptApp.inject({
+      method: 'GET',
+      url: '/auth/test',
+      headers: { authorization: `Bearer ${exemptApiKey}` },
+    });
+    expect(res2.statusCode).toBe(429);
+
+    // Request to exempt route succeeds with 200
+    const resExempt = await exemptApp.inject({
+      method: 'GET',
+      url: '/exempt-route',
+      headers: { authorization: `Bearer ${exemptApiKey}` },
+    });
+    expect(resExempt.statusCode).toBe(200);
+    expect(resExempt.json()).toEqual({ exempt: true });
+
+    // Cleanup
+    await exemptApp.close();
+    await prisma.apiKey.deleteMany({ where: { tenantId: exemptTenant.id } });
+    await prisma.tenant.delete({ where: { id: exemptTenant.id } });
+    await redis.del(`ratelimit:${exemptTenant.id}`);
+  });
 });
