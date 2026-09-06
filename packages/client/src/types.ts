@@ -26,14 +26,18 @@ export interface WorkflowRun {
   input?: unknown;
   output?: unknown;
   error?: unknown;
+  triggerType?: string;
+  triggerEventId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface SendEventOptions {
-  id: string;
+  id?: string;
+  eventId?: string;
   name: string;
   data?: unknown;
+  payload?: unknown;
 }
 
 export interface SendEventResponse {

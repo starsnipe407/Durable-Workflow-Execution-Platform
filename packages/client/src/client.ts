@@ -187,7 +187,14 @@ export class WorkflowClient {
   }
 
   async sendEvent(options: SendEventOptions): Promise<SendEventResponse> {
-    const res = await this.request('POST', '/events', options);
+    const eventId = options.id ?? options.eventId;
+    const data = options.data !== undefined ? options.data : (options.payload !== undefined ? options.payload : {});
+    const body = {
+      id: eventId,
+      name: options.name,
+      data,
+    };
+    const res = await this.request('POST', '/events', body);
     return res.json() as Promise<SendEventResponse>;
   }
 
@@ -205,6 +212,18 @@ export class WorkflowClient {
     };
     const res = await this.request('POST', '/runs', body, headers);
     return res.json() as Promise<WorkflowRun>;
+  }
+
+  async startWorkflow(
+    workflowName: string,
+    input?: unknown,
+    options?: Omit<CreateRunOptions, 'workflowName' | 'input'>
+  ): Promise<WorkflowRun> {
+    return this.run({
+      workflowName,
+      input,
+      ...options,
+    });
   }
 }
 

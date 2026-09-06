@@ -7,7 +7,9 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc --build",
-    "test": "vitest run"
+    "start": "tsx src/cli.ts",
+    "start:direct": "tsx src/cli.ts --direct",
+    "test": "dotenv -e ../../.env.test -- vitest run"
   },
   "dependencies": {
     "@durable/client": "workspace:*",
@@ -18,8 +20,10 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
+    "@durable/api": "workspace:*",
     "@types/node": "^22.13.9",
     "dotenv-cli": "^8.0.0",
+    "ioredis": "^6.0.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
     "vitest": "^3.0.7"

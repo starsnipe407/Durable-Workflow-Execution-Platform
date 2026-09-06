@@ -196,12 +196,18 @@ importers:
         specifier: ^3.0.0
         version: 3.25.76
     devDependencies:
+      '@durable/api':
+        specifier: workspace:*
+        version: link:../../apps/api
       '@types/node':
         specifier: ^22.13.9
         version: 22.20.1
       dotenv-cli:
         specifier: ^8.0.0
         version: 8.0.0
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0
       tsx:
         specifier: ^4.19.3
         version: 4.23.13

@@ -1,12 +1,49 @@
 import { defineWorkflow, type WorkflowDefinition } from "@durable/workflow-sdk";
 import { FakePaymentGateway } from "./services/payment-gateway.js";
+import {
+  FakeInventoryService,
+  FakeNotificationService,
+  FakeCRMService,
+  FakeWarehouseService
+} from "./services/mock-services.js";
 import type { OrderInput, OrderOutput } from "./types.js";
 
 export const defaultPaymentGateway = new FakePaymentGateway();
+export const defaultInventoryService = new FakeInventoryService();
+export const defaultNotificationService = new FakeNotificationService();
+export const defaultCRMService = new FakeCRMService();
+export const defaultWarehouseService = new FakeWarehouseService();
+
+export interface OrderWorkflowServices {
+  gateway?: FakePaymentGateway;
+  inventory?: FakeInventoryService;
+  notification?: FakeNotificationService;
+  crm?: FakeCRMService;
+  warehouse?: FakeWarehouseService;
+}
 
 export function createProcessOrderWorkflow(
-  gateway: FakePaymentGateway = defaultPaymentGateway
+  servicesOrGateway: FakePaymentGateway | OrderWorkflowServices = defaultPaymentGateway
 ): WorkflowDefinition<OrderInput, OrderOutput> {
+  const isGateway =
+    servicesOrGateway instanceof FakePaymentGateway ||
+    ("charge" in servicesOrGateway && typeof (servicesOrGateway as any).charge === "function");
+  const gateway = isGateway
+    ? (servicesOrGateway as FakePaymentGateway)
+    : (servicesOrGateway.gateway ?? defaultPaymentGateway);
+  const inventory = isGateway
+    ? defaultInventoryService
+    : (servicesOrGateway.inventory ?? defaultInventoryService);
+  const notification = isGateway
+    ? defaultNotificationService
+    : (servicesOrGateway.notification ?? defaultNotificationService);
+  const crm = isGateway
+    ? defaultCRMService
+    : (servicesOrGateway.crm ?? defaultCRMService);
+  const warehouse = isGateway
+    ? defaultWarehouseService
+    : (servicesOrGateway.warehouse ?? defaultWarehouseService);
+
   return defineWorkflow<OrderInput, OrderOutput>(
     { name: "process-order", version: "1.0.0" },
     async ({ input, step }) => {
@@ -35,9 +72,10 @@ export function createProcessOrderWorkflow(
 
       // Step 2: reserve inventory
       const inventoryRes = await step.run("reserve-inventory", async () => {
+        const res = await inventory.reserve(input.orderId, input.items);
         return {
-          reservationId: `res_${input.orderId}`,
-          reservedItems: input.items.map((i) => i.sku)
+          reservationId: res.reservationId,
+          reservedItems: res.items
         };
       });
 
@@ -57,18 +95,29 @@ export function createProcessOrderWorkflow(
 
       // Step 4: parallel confirmations via Promise.all
       const [emailRes, crmRes, warehouseRes] = await Promise.all([
-        step.run("send-confirmation-email", async () => ({
-          sent: true,
-          recipient: input.customerEmail
-        })),
-        step.run("update-crm-records", async () => ({
-          updated: true,
-          customerId: input.customerId
-        })),
-        step.run("dispatch-warehouse-fulfillment", async () => ({
-          dispatched: true,
-          warehouse: "WH-MAIN"
-        }))
+        step.run("send-confirmation-email", async () => {
+          const res = await notification.sendReceipt(input.customerEmail, input.orderId, input.totalAmount);
+          return {
+            sent: res.sent,
+            recipient: input.customerEmail,
+            messageId: res.messageId
+          };
+        }),
+        step.run("update-crm-records", async () => {
+          const res = await crm.updateCustomerLifetimeValue(input.customerId, input.totalAmount);
+          return {
+            updated: res.updated,
+            customerId: input.customerId
+          };
+        }),
+        step.run("dispatch-warehouse-fulfillment", async () => {
+          const res = await warehouse.dispatchOrder(input.orderId, "WH-MAIN");
+          return {
+            dispatched: res.dispatched,
+            warehouse: "WH-MAIN",
+            trackingNumber: res.trackingNumber
+          };
+        })
       ]);
 
       // Step 5: generate invoice

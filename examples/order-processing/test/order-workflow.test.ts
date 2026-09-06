@@ -8,18 +8,30 @@ import type { OrderInput, OrderOutput } from "../src/types.js";
 describe("processOrderWorkflow End-to-End Tests", () => {
   const db = createPrismaClient(process.env.DATABASE_URL);
   let tenantId: string;
+  const tenantIds: string[] = [];
 
   beforeAll(async () => {
     await db.$connect();
   });
 
   afterAll(async () => {
+    for (const tId of tenantIds) {
+      await db.executionEvent.deleteMany({ where: { tenantId: tId } });
+      await db.stepAttempt.deleteMany({ where: { stepExecution: { workflowRun: { tenantId: tId } } } });
+      await db.stepExecution.deleteMany({ where: { workflowRun: { tenantId: tId } } });
+      await db.workflowRun.deleteMany({ where: { tenantId: tId } });
+      await db.workflowEventBinding.deleteMany({ where: { tenantId: tId } });
+      await db.ingestedEvent.deleteMany({ where: { tenantId: tId } });
+      await db.apiKey.deleteMany({ where: { tenantId: tId } });
+      await db.tenant.deleteMany({ where: { id: tId } });
+    }
     await db.$disconnect();
   });
 
   beforeEach(async () => {
     const tenant = await db.tenant.create({ data: { name: "order-workflow-test-tenant" } });
     tenantId = tenant.id;
+    tenantIds.push(tenant.id);
     defaultPaymentGateway.reset();
   });
 
@@ -145,9 +157,6 @@ describe("processOrderWorkflow End-to-End Tests", () => {
   });
 
   it("memoizes completed steps and skips re-execution on replay after simulated worker crash", async () => {
-    let validateCount = 0;
-    let reserveCount = 0;
-
     const input: OrderInput = {
       orderId: "ord_memoize",
       customerId: "cust_303",

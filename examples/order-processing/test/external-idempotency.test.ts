@@ -7,18 +7,30 @@ import type { OrderInput } from "../src/types.js";
 describe("External Idempotency & Gateway Deduplication Tests", () => {
   const db = createPrismaClient(process.env.DATABASE_URL);
   let tenantId: string;
+  const tenantIds: string[] = [];
 
   beforeAll(async () => {
     await db.$connect();
   });
 
   afterAll(async () => {
+    for (const tId of tenantIds) {
+      await db.executionEvent.deleteMany({ where: { tenantId: tId } });
+      await db.stepAttempt.deleteMany({ where: { stepExecution: { workflowRun: { tenantId: tId } } } });
+      await db.stepExecution.deleteMany({ where: { workflowRun: { tenantId: tId } } });
+      await db.workflowRun.deleteMany({ where: { tenantId: tId } });
+      await db.workflowEventBinding.deleteMany({ where: { tenantId: tId } });
+      await db.ingestedEvent.deleteMany({ where: { tenantId: tId } });
+      await db.apiKey.deleteMany({ where: { tenantId: tId } });
+      await db.tenant.deleteMany({ where: { id: tId } });
+    }
     await db.$disconnect();
   });
 
   beforeEach(async () => {
     const tenant = await db.tenant.create({ data: { name: "idempotency-test-tenant" } });
     tenantId = tenant.id;
+    tenantIds.push(tenant.id);
   });
 
   it("deduplicates multiple charges with the same idempotency key", async () => {
