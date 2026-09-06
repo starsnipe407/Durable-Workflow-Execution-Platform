@@ -7,6 +7,7 @@
   "scripts": {
     "build": "turbo run build",
     "test": "vitest run",
+    "smoke": "vitest run apps/api/test/smoke-e2e.test.ts",
     "lint": "turbo run lint",
     "db:up": "docker compose up -d postgres-test redis-test",
     "db:down": "docker compose down",
