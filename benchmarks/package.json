@@ -8,7 +8,10 @@
   "scripts": {
     "build": "tsc --build",
     "test": "dotenv -e ../.env.test -- vitest run",
-    "bench:throughput": "tsx src/bench-throughput.ts"
+    "bench:throughput": "tsx src/bench-throughput.ts",
+    "bench:chaos": "tsx src/bench-chaos.ts",
+    "bench:recovery": "tsx src/bench-reconciliation.ts",
+    "bench:all": "tsx src/bench-all.ts"
   },
   "dependencies": {
     "@durable/client": "workspace:*",

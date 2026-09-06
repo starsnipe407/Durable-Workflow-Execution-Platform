@@ -29,6 +29,7 @@ export interface WorkflowWorkerOptions {
   concurrencyCoordinator?: ConcurrencyCoordinator;
   redis?: Redis;
   concurrencyRetryDelayMs?: number;
+  leaseDurationMs?: number;
 }
 
 export class WorkflowWorker {
@@ -84,6 +85,7 @@ export class WorkflowWorker {
     this.executor = new WorkflowExecutor({
       db: this.db,
       workerId: this.workerId,
+      leaseDurationMs: options.leaseDurationMs,
       onEvent: async (runId) => {
         if (this.publisher) {
           try {

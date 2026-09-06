@@ -11,3 +11,4 @@ coverage
 *.tsbuildinfo
 
 .superpowers
+benchmarks/results
