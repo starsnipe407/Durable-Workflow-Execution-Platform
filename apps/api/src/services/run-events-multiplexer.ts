@@ -4,6 +4,7 @@ import { getRunEventsChannel } from '@durable/shared';
 export class RunEventsMultiplexer {
   private readonly subRedis: Redis;
   private readonly listeners = new Map<string, Set<() => void>>();
+  private readonly pendingSubscriptions = new Map<string, Promise<void>>();
   private isClosed = false;
 
   constructor(redis: Redis) {
@@ -16,7 +17,7 @@ export class RunEventsMultiplexer {
         const runId = channel.slice(prefix.length);
         const runListeners = this.listeners.get(runId);
         if (runListeners) {
-          for (const listener of runListeners) {
+          for (const listener of [...runListeners]) {
             try {
               listener();
             } catch {
@@ -41,14 +42,25 @@ export class RunEventsMultiplexer {
     }
     set.add(listener);
 
-    if (set.size === 1) {
-      try {
-        await this.subRedis.subscribe(channel);
-      } catch (err) {
-        set.delete(listener);
+    let subPromise = this.pendingSubscriptions.get(runId);
+    if (!subPromise) {
+      subPromise = this.subRedis
+        .subscribe(channel)
+        .then(() => {})
+        .finally(() => {
+          this.pendingSubscriptions.delete(runId);
+        });
+      this.pendingSubscriptions.set(runId, subPromise);
+    }
+
+    try {
+      await subPromise;
+    } catch (err) {
+      set.delete(listener);
+      if (set.size === 0) {
         this.listeners.delete(runId);
-        throw err;
       }
+      throw err;
     }
 
     let unsubscribed = false;
@@ -71,6 +83,7 @@ export class RunEventsMultiplexer {
   async close(): Promise<void> {
     if (this.isClosed) return;
     this.isClosed = true;
+    this.pendingSubscriptions.clear();
     this.listeners.clear();
     await this.subRedis.quit().catch(() => this.subRedis.disconnect());
   }

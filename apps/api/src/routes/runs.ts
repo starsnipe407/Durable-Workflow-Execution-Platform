@@ -103,7 +103,7 @@ export function runsRoutes(
       }
 
       if (options.redis) {
-        await publishRunEventWakeup(options.redis, run.id);
+        await publishRunEventWakeup(options.redis, run.id).catch(() => {});
       }
 
       return reply.status(201).send(run);
@@ -228,7 +228,7 @@ export function runsRoutes(
     }
 
     if (options.redis) {
-      await publishRunEventWakeup(options.redis, updatedRun.id);
+      await publishRunEventWakeup(options.redis, updatedRun.id).catch(() => {});
     }
 
     return reply.status(200).send(updatedRun);
@@ -280,7 +280,7 @@ export function runsRoutes(
     });
 
     if (options.redis) {
-      await publishRunEventWakeup(options.redis, updatedRun.id);
+      await publishRunEventWakeup(options.redis, updatedRun.id).catch(() => {});
     }
 
     return reply.status(200).send(updatedRun);
@@ -305,8 +305,12 @@ export function runsRoutes(
     const normalizedHeader = Array.isArray(headerLastEventId) ? headerLastEventId[0] : headerLastEventId;
     const rawLastEventId = normalizedHeader || (request.query as any)?.lastEventId;
     let lastSentId: bigint | undefined;
-    if (rawLastEventId && typeof rawLastEventId === 'string' && /^\d+$/.test(rawLastEventId.trim())) {
-      lastSentId = BigInt(rawLastEventId.trim());
+    if (rawLastEventId !== undefined && rawLastEventId !== null && /^\d+$/.test(String(rawLastEventId).trim())) {
+      lastSentId = BigInt(String(rawLastEventId).trim());
+    }
+
+    if (request.raw.destroyed || reply.raw.destroyed) {
+      return;
     }
 
     reply.raw.writeHead(200, {
@@ -326,6 +330,7 @@ export function runsRoutes(
         reply.raw.write(': keepalive\n\n');
       }
     }, keepaliveMs);
+    keepaliveTimer.unref?.();
 
     let isFetching = false;
     let hasPendingWakeup = false;
@@ -343,6 +348,10 @@ export function runsRoutes(
     };
 
     request.raw.on('close', () => {
+      cleanup().catch(() => {});
+    });
+
+    reply.raw.on('error', () => {
       cleanup().catch(() => {});
     });
 
@@ -393,27 +402,29 @@ export function runsRoutes(
             }
           }
 
-          // Check if workflow run became terminal even if terminal event wasn't in this batch
-          const currentRun = await options.prisma.workflowRun.findUnique({
-            where: { id: runId },
-            select: { status: true },
-          });
-          if (
-            currentRun &&
-            ['COMPLETED', 'FAILED', 'CANCELLED'].includes(currentRun.status)
-          ) {
-            const remaining = await options.prisma.executionEvent.count({
-              where: {
-                workflowRunId: runId,
-                ...(lastSentId !== undefined ? { id: { gt: lastSentId } } : {}),
-              },
+          // Check if workflow run became terminal only if no new events were found in this query
+          if (events.length === 0) {
+            const currentRun = await options.prisma.workflowRun.findUnique({
+              where: { id: runId },
+              select: { status: true },
             });
-            if (remaining === 0) {
-              await cleanup();
-              if (!reply.raw.writableEnded) {
-                reply.raw.end();
+            if (
+              currentRun &&
+              ['COMPLETED', 'FAILED', 'CANCELLED'].includes(currentRun.status)
+            ) {
+              const remaining = await options.prisma.executionEvent.count({
+                where: {
+                  workflowRunId: runId,
+                  ...(lastSentId !== undefined ? { id: { gt: lastSentId } } : {}),
+                },
+              });
+              if (remaining === 0) {
+                await cleanup();
+                if (!reply.raw.writableEnded) {
+                  reply.raw.end();
+                }
+                return;
               }
-              return;
             }
           }
         } while (hasPendingWakeup && !closed && !reply.raw.writableEnded);
@@ -449,8 +460,13 @@ export function runsRoutes(
     }
 
     return new Promise<void>((resolve) => {
-      reply.raw.once('finish', resolve);
-      request.raw.once('close', resolve);
+      const done = () => {
+        reply.raw.off('finish', done);
+        request.raw.off('close', done);
+        resolve();
+      };
+      reply.raw.once('finish', done);
+      request.raw.once('close', done);
     });
   };
 

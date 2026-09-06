@@ -85,7 +85,7 @@ export class StepContextImpl implements StepContext {
       throw new WorkflowSuspendedError(`Step "${key}" is in RETRY_WAIT until ${claim.nextRetryAt.toISOString()}.`);
     }
 
-    await this.onEvent?.(this.workflowRunId);
+    await this.triggerEvent();
 
     const maxRetries = options.retries ?? 3; // 1 initial + 3 retries
     const timeoutMs = options.timeoutMs;
@@ -129,7 +129,7 @@ export class StepContextImpl implements StepContext {
         isTerminalFailure
       });
 
-      await this.onEvent?.(this.workflowRunId);
+      await this.triggerEvent();
 
       if (isTerminalFailure) {
         throw err;
@@ -149,9 +149,17 @@ export class StepContextImpl implements StepContext {
       output
     });
 
-    await this.onEvent?.(this.workflowRunId);
+    await this.triggerEvent();
 
     return output;
+  }
+
+  private async triggerEvent(): Promise<void> {
+    try {
+      await this.onEvent?.(this.workflowRunId);
+    } catch {
+      // Best-effort notification: errors must not disrupt durable step execution
+    }
   }
 
   private executeWithTimeout<T>(

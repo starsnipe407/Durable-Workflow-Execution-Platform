@@ -98,7 +98,10 @@ export class WorkflowClient {
           if (trimmed === '') {
             if (currentEvent.data !== undefined) {
               try {
-                yield JSON.parse(currentEvent.data) as WorkflowExecutionEvent;
+                const parsed = JSON.parse(currentEvent.data) as WorkflowExecutionEvent;
+                if (!parsed.id && currentEvent.id) parsed.id = currentEvent.id;
+                if (!parsed.eventType && currentEvent.event) parsed.eventType = currentEvent.event;
+                yield parsed;
               } catch {}
             }
             currentEvent = {};
@@ -137,7 +140,10 @@ export class WorkflowClient {
           }
           if (currentEvent.data !== undefined) {
             try {
-              yield JSON.parse(currentEvent.data) as WorkflowExecutionEvent;
+              const parsed = JSON.parse(currentEvent.data) as WorkflowExecutionEvent;
+              if (!parsed.id && currentEvent.id) parsed.id = currentEvent.id;
+              if (!parsed.eventType && currentEvent.event) parsed.eventType = currentEvent.event;
+              yield parsed;
             } catch {}
             currentEvent = {};
           }

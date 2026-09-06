@@ -55,7 +55,7 @@ export class WorkflowExecutor {
           payload: { workerId: this.workerId, startedAt: now }
         });
       });
-      await this.onEvent?.(runId);
+      await this.triggerEvent(runId);
     }
 
     const seenKeys = new Set<string>();
@@ -94,7 +94,7 @@ export class WorkflowExecutor {
           payload: { output }
         });
       });
-      await this.onEvent?.(runId);
+      await this.triggerEvent(runId);
 
       return output;
     } catch (err) {
@@ -124,9 +124,17 @@ export class WorkflowExecutor {
           payload: { error: errorMessage }
         });
       });
-      await this.onEvent?.(runId);
+      await this.triggerEvent(runId);
 
       throw err;
+    }
+  }
+
+  private async triggerEvent(runId: string): Promise<void> {
+    try {
+      await this.onEvent?.(runId);
+    } catch {
+      // Best-effort notification: errors must not disrupt durable workflow execution
     }
   }
 }

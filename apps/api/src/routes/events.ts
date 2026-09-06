@@ -118,7 +118,7 @@ export function eventsRoutes(
 
         if (options.redis) {
           await Promise.all(
-            createdRuns.map((run) => publishRunEventWakeup(options.redis!, run.id))
+            createdRuns.map((run) => publishRunEventWakeup(options.redis!, run.id).catch(() => {}))
           );
         }
 

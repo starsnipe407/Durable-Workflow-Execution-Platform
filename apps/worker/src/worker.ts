@@ -76,14 +76,21 @@ export class WorkflowWorker {
       this.concurrencyCoordinator = new ConcurrencyCoordinator(this.redisClient);
     }
 
-    this.publisher = this.redisClient || options.redis;
+    this.publisher =
+      this.redisClient ||
+      options.redis ||
+      (options.concurrencyCoordinator ? (options.concurrencyCoordinator as any).redis : undefined);
 
     this.executor = new WorkflowExecutor({
       db: this.db,
       workerId: this.workerId,
       onEvent: async (runId) => {
         if (this.publisher) {
-          await publishRunEventWakeup(this.publisher, runId);
+          try {
+            await publishRunEventWakeup(this.publisher, runId);
+          } catch {
+            // Best-effort notification: errors must not disrupt worker execution
+          }
         }
       },
     });
@@ -141,7 +148,11 @@ export class WorkflowWorker {
         });
       });
       if (this.publisher) {
-        await publishRunEventWakeup(this.publisher, runId);
+        try {
+          await publishRunEventWakeup(this.publisher, runId);
+        } catch {
+          // Best-effort notification: errors must not disrupt worker execution
+        }
       }
       return;
     }
