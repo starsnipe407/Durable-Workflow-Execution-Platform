@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { authenticateApiKey } from './plugins/auth';
 import { runsRoutes } from './routes/runs';
+import { eventsRoutes } from './routes/events';
 import './types'; // ensure fastify request is augmented
 
 export function createApp(options: { prisma: PrismaClient; queue?: Queue; redis?: Redis }): FastifyInstance {
@@ -18,6 +19,7 @@ export function createApp(options: { prisma: PrismaClient; queue?: Queue; redis?
   );
 
   runsRoutes(app, options);
+  eventsRoutes(app, options);
 
   return app;
 }

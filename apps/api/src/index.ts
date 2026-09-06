@@ -1,6 +1,7 @@
 export * from './app.js';
 export * from './plugins/auth.js';
 export * from './routes/runs.js';
+export * from './routes/events.js';
 export * from './types.js';
 
 export async function startServer(port = Number(process.env.PORT) || 3000, host = '0.0.0.0') {
