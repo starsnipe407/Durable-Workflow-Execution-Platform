@@ -5,7 +5,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import crypto from 'node:crypto';
 import { createPrismaClient, type PrismaClient } from '@durable/database';
 import { createWorkflowQueue } from '@durable/worker';
-import { runThroughputBenchmark } from '../src/bench-throughput.js';
+import {
+  runThroughputBenchmark,
+  awaitRunsCompletedWithLatencies,
+  stopWorkerProcesses,
+} from '../src/bench-throughput.js';
 
 import { createRequire } from 'node:module';
 
@@ -208,6 +212,49 @@ describe('Horizontal Worker Replica & Throughput Benchmark Harness', () => {
           expect(s.attemptCount).toBe(1);
         }
       }
+    });
+
+    it('throws when a workflow run transitions to FAILED status', async () => {
+      const failedRun = await prisma.workflowRun.create({
+        data: {
+          tenantId: testTenantId,
+          workflowName: 'test-wf-fail',
+          workflowVersion: '1.0.0',
+          status: 'FAILED',
+          input: {},
+        },
+      });
+
+      await expect(
+        awaitRunsCompletedWithLatencies(prisma, [failedRun.id], new Map(), 5000)
+      ).rejects.toThrow(/terminated with unexpected status: FAILED/);
+    });
+
+    it('throws when a workflow run transitions to CANCELLED status', async () => {
+      const cancelledRun = await prisma.workflowRun.create({
+        data: {
+          tenantId: testTenantId,
+          workflowName: 'test-wf-cancel',
+          workflowVersion: '1.0.0',
+          status: 'CANCELLED',
+          input: {},
+        },
+      });
+
+      await expect(
+        awaitRunsCompletedWithLatencies(prisma, [cancelledRun.id], new Map(), 5000)
+      ).rejects.toThrow(/terminated with unexpected status: CANCELLED/);
+    });
+  });
+
+  describe('Worker process termination with signalCode', () => {
+    it('resolves immediately when child process already has signalCode', async () => {
+      const fakeChild = {
+        exitCode: null,
+        signalCode: 'SIGTERM',
+      } as any;
+
+      await expect(stopWorkerProcesses([fakeChild])).resolves.toBeUndefined();
     });
   });
 });

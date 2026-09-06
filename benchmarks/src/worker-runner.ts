@@ -32,7 +32,7 @@ export async function startWorkerReplica(): Promise<WorkerReplicaInstance> {
     queueName,
   });
 
-  await worker.worker.waitUntilReady().catch(() => {});
+  await worker.worker.waitUntilReady();
 
   let isClosing = false;
   const shutdown = async () => {

@@ -77,12 +77,12 @@ function computeMedian(numbers: number[]): number {
   return Number(sorted[mid]!.toFixed(2));
 }
 
-async function stopWorkerProcesses(children: ChildProcess[]): Promise<void> {
+export async function stopWorkerProcesses(children: ChildProcess[]): Promise<void> {
   await Promise.all(
     children.map(
       (child) =>
         new Promise<void>((resolve) => {
-          if (child.exitCode !== null) {
+          if (child.exitCode !== null || child.signalCode !== null) {
             return resolve();
           }
           let timer: NodeJS.Timeout | null = null;
@@ -92,7 +92,7 @@ async function stopWorkerProcesses(children: ChildProcess[]): Promise<void> {
           };
           child.once('exit', onExit);
           timer = setTimeout(() => {
-            if (child.exitCode === null) {
+            if (child.exitCode === null && child.signalCode === null) {
               try {
                 child.kill('SIGKILL');
               } catch {}
@@ -113,7 +113,7 @@ async function stopWorkerProcesses(children: ChildProcess[]): Promise<void> {
   );
 }
 
-async function awaitRunsCompletedWithLatencies(
+export async function awaitRunsCompletedWithLatencies(
   db: PrismaClient,
   runIds: string[],
   startTimes: Map<string, number>,
@@ -140,7 +140,10 @@ async function awaitRunsCompletedWithLatencies(
       });
 
       for (const run of runs) {
-        if (run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'CANCELLED') {
+        if (run.status === 'FAILED' || run.status === 'CANCELLED') {
+          throw new Error(`Workflow run ${run.id} terminated with unexpected status: ${run.status}`);
+        }
+        if (run.status === 'COMPLETED') {
           const finishedAt = performance.now();
           const submittedAt = startTimes.get(run.id) ?? start;
           latencies.push(Number((finishedAt - submittedAt).toFixed(2)));
@@ -183,13 +186,15 @@ export async function runThroughputBenchmark(
     options?.queueName ||
     `bench_queue_${crypto.randomUUID().slice(0, 8)}`;
 
-  const runnerPath =
-    options?.workerRunnerPath ||
-    path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'worker-runner.ts');
+  const defaultDir = path.dirname(fileURLToPath(import.meta.url));
+  const defaultTsPath = path.resolve(defaultDir, 'worker-runner.ts');
+  const defaultJsPath = path.resolve(defaultDir, 'worker-runner.js');
+  const defaultRunnerPath = fs.existsSync(defaultTsPath) ? defaultTsPath : defaultJsPath;
+  const runnerPath = options?.workerRunnerPath || defaultRunnerPath;
 
   let execArgv = process.execArgv;
   const hasTsx = execArgv.some((arg) => arg.includes('tsx'));
-  if (!hasTsx) {
+  if (runnerPath.endsWith('.ts') && !hasTsx) {
     try {
       const req = createRequire(import.meta.url);
       const tsxPackage = req.resolve('tsx/package.json');
@@ -240,7 +245,26 @@ export async function runThroughputBenchmark(
           children.map(
             (child, idx) =>
               new Promise<void>((resolve, reject) => {
+                const onExit = (code: number | null) => {
+                  clearTimeout(timer);
+                  child.off('message', onMsg);
+                  reject(
+                    new Error(`Worker replica ${idx + 1}/${N} exited prematurely with code ${code}`)
+                  );
+                };
+
+                const onMsg = (msg: any) => {
+                  if (msg && msg.ready === true) {
+                    clearTimeout(timer);
+                    child.off('message', onMsg);
+                    child.off('exit', onExit);
+                    resolve();
+                  }
+                };
+
                 const timer = setTimeout(() => {
+                  child.off('message', onMsg);
+                  child.off('exit', onExit);
                   reject(
                     new Error(
                       `Timed out waiting for worker replica ${idx + 1}/${N} ready message`
@@ -248,29 +272,15 @@ export async function runThroughputBenchmark(
                   );
                 }, 20000);
 
-                const onMsg = (msg: any) => {
-                  if (msg && msg.ready === true) {
-                    clearTimeout(timer);
-                    child.off('message', onMsg);
-                    resolve();
-                  }
-                };
-
                 child.on('message', onMsg);
-                child.once('exit', (code) => {
-                  clearTimeout(timer);
-                  reject(
-                    new Error(`Worker replica ${idx + 1}/${N} exited prematurely with code ${code}`)
-                  );
-                });
+                child.once('exit', onExit);
               })
           )
         );
 
         // 3. Warmup phase (discard timings)
         if (warmupRuns > 0) {
-          const warmupRunIds: string[] = [];
-          for (let i = 0; i < warmupRuns; i++) {
+          const warmupPromises = Array.from({ length: warmupRuns }, async (_, i) => {
             const orderId = `warmup_${N}_${i}_${crypto.randomUUID().slice(0, 8)}`;
             const input: OrderInput = {
               orderId,
@@ -285,14 +295,15 @@ export async function runThroughputBenchmark(
               workflowVersion: '1.0.0',
               input: input as any,
             });
-            warmupRunIds.push(run.id);
             await enqueueWorkflowRun(queue, {
               tenantId,
               runId: run.id,
               workflowName: 'process-order',
               workflowVersion: '1.0.0',
             });
-          }
+            return run.id;
+          });
+          const warmupRunIds = await Promise.all(warmupPromises);
           await awaitRunsCompletedWithLatencies(
             db,
             warmupRunIds,
@@ -311,7 +322,7 @@ export async function runThroughputBenchmark(
           const runIds: string[] = [];
           const runStartTimes = new Map<string, number>();
 
-          for (let i = 0; i < runsPerRepetition; i++) {
+          const submissionPromises = Array.from({ length: runsPerRepetition }, async (_, i) => {
             const orderId = `ord_t${N}_r${rep}_${i}_${crypto.randomUUID().slice(0, 8)}`;
             const input: OrderInput = {
               orderId,
@@ -330,15 +341,19 @@ export async function runThroughputBenchmark(
               workflowVersion: '1.0.0',
               input: input as any,
             });
-            runIds.push(run.id);
-            runStartTimes.set(run.id, submitTime);
-
             await enqueueWorkflowRun(queue, {
               tenantId,
               runId: run.id,
               workflowName: 'process-order',
               workflowVersion: '1.0.0',
             });
+            return { id: run.id, submitTime };
+          });
+
+          const submitted = await Promise.all(submissionPromises);
+          for (const item of submitted) {
+            runIds.push(item.id);
+            runStartTimes.set(item.id, item.submitTime);
           }
 
           const repLatencies = await awaitRunsCompletedWithLatencies(
