@@ -1,4 +1,4 @@
-import { WorkflowClientOptions, CreateRunOptions, ListRunsOptions, WorkflowRun, WorkflowClientError } from './types.js';
+import { WorkflowClientOptions, CreateRunOptions, ListRunsOptions, WorkflowRun, WorkflowClientError, SendEventOptions, SendEventResponse } from './types.js';
 
 export class WorkflowClient {
   private baseUrl: string;
@@ -38,6 +38,11 @@ export class WorkflowClient {
     }
     
     return res;
+  }
+
+  async sendEvent(options: SendEventOptions): Promise<SendEventResponse> {
+    const res = await this.request('POST', '/events', options);
+    return res.json() as Promise<SendEventResponse>;
   }
 
   async run(options: CreateRunOptions): Promise<WorkflowRun> {

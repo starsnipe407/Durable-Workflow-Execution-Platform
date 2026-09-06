@@ -30,6 +30,19 @@ export interface WorkflowRun {
   updatedAt: string;
 }
 
+export interface SendEventOptions {
+  id: string;
+  name: string;
+  data?: unknown;
+}
+
+export interface SendEventResponse {
+  status: 'processed' | 'duplicate';
+  eventId: string;
+  runs: WorkflowRun[];
+}
+
+
 export class WorkflowClientError extends Error {
   statusCode: number;
   errorBody: unknown;
