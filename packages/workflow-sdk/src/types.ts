@@ -32,14 +32,18 @@ export type WorkflowHandler<TInput = unknown, TOutput = unknown> = (
   ctx: WorkflowContext<TInput>
 ) => Promise<TOutput>;
 
+export interface WorkflowConcurrencyConfig<TInput = unknown> {
+  limit?: number; // max concurrent executions globally for this workflow
+  key?: (ctx: { input: TInput }) => string | undefined; // partition key function
+  keyLimit?: number; // max concurrent executions per partition key (default 1 if key provided)
+  ttlSeconds?: number; // lease TTL in seconds (default 30)
+}
+
 export interface WorkflowConfig<TInput = unknown> {
   name: string;
   version: string;
   trigger?: { event: string };
-  concurrency?: {
-    limit?: number;
-    key?: (ctx: { input: TInput }) => string | undefined;
-  };
+  concurrency?: WorkflowConcurrencyConfig<TInput>;
 }
 
 export interface WorkflowDefinition<TInput = unknown, TOutput = unknown> {

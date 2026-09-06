@@ -1,4 +1,5 @@
 import { Worker, type ConnectionOptions, type Job, type Queue } from "bullmq";
+import { Redis } from "ioredis";
 import type { PrismaClient, WorkflowRunStatus } from "@durable/database";
 import { recordExecutionEvent } from "@durable/database";
 import { generateId } from "@durable/shared";
@@ -11,6 +12,7 @@ import {
 } from "./queue.js";
 import type { WorkflowRunJobData } from "./types.js";
 import type { WorkflowRegistry } from "./registry.js";
+import { ConcurrencyCoordinator } from "./concurrency.js";
 
 function isTerminalRunStatus(status: WorkflowRunStatus | string): boolean {
   return status === "COMPLETED" || status === "FAILED" || status === "CANCELLED";
@@ -24,25 +26,56 @@ export interface WorkflowWorkerOptions {
   concurrency?: number;
   queue?: Queue<WorkflowRunJobData>;
   queueName?: string;
+  concurrencyCoordinator?: ConcurrencyCoordinator;
+  redis?: Redis;
+  concurrencyRetryDelayMs?: number;
 }
 
 export class WorkflowWorker {
   public readonly worker: Worker<WorkflowRunJobData>;
   public readonly queue: Queue<WorkflowRunJobData>;
+  public readonly concurrencyCoordinator: ConcurrencyCoordinator;
   private readonly ownsQueue: boolean;
   private readonly db: PrismaClient;
   private readonly registry: WorkflowRegistry;
   private readonly workerId: string;
   private readonly executor: WorkflowExecutor;
+  private readonly redisClient?: Redis;
+  private readonly ownsRedis: boolean;
+  private readonly concurrencyRetryDelayMs: number;
 
   constructor(options: WorkflowWorkerOptions) {
     this.db = options.db;
     this.registry = options.registry;
     this.workerId = options.workerId ?? generateId("worker");
+    this.concurrencyRetryDelayMs = options.concurrencyRetryDelayMs ?? 500;
     this.executor = new WorkflowExecutor({
       db: this.db,
       workerId: this.workerId,
     });
+
+    if (options.concurrencyCoordinator) {
+      this.concurrencyCoordinator = options.concurrencyCoordinator;
+      this.ownsRedis = false;
+    } else if (options.redis) {
+      this.concurrencyCoordinator = new ConcurrencyCoordinator(options.redis);
+      this.ownsRedis = false;
+    } else {
+      let redisUrl: string;
+      if (typeof options.connectionOrUrl === "string") {
+        redisUrl = options.connectionOrUrl;
+      } else if (
+        options.connectionOrUrl &&
+        typeof (options.connectionOrUrl as any).url === "string"
+      ) {
+        redisUrl = (options.connectionOrUrl as any).url;
+      } else {
+        redisUrl = process.env.REDIS_URL || "redis://localhost:6380";
+      }
+      this.redisClient = new Redis(redisUrl, { maxRetriesPerRequest: null });
+      this.ownsRedis = true;
+      this.concurrencyCoordinator = new ConcurrencyCoordinator(this.redisClient);
+    }
 
     const connection = resolveRedisConnection(options.connectionOrUrl);
     const queueName =
@@ -99,32 +132,63 @@ export class WorkflowWorker {
       return;
     }
 
-    const output = await this.executor.execute(workflow, runId);
+    const concurrency = workflow.config.concurrency;
+    const hasConcurrencyLimit =
+      concurrency && (concurrency.limit !== undefined || concurrency.key !== undefined);
 
-    if (output === undefined) {
-      const retryStep = await this.db.stepExecution.findFirst({
-        where: {
-          workflowRunId: runId,
-          status: "RETRY_WAIT",
-          nextRetryAt: { not: null },
-        },
-        orderBy: {
-          nextRetryAt: "asc",
-        },
-      });
+    let releaseSlot: (() => Promise<void>) | undefined;
+    if (hasConcurrencyLimit) {
+      const slot = await this.concurrencyCoordinator.tryAcquire(
+        runId,
+        concurrency,
+        run.input,
+        workflow.config.name
+      );
+      if (!slot.acquired) {
+        await enqueueWorkflowRun(this.queue, job.data, {
+          delay: this.concurrencyRetryDelayMs,
+        });
+        return;
+      }
+      releaseSlot = slot.release;
+    }
 
-      if (retryStep?.nextRetryAt) {
-        const delay = Math.max(0, retryStep.nextRetryAt.getTime() - Date.now());
-        const jobId = `retry_${runId}_${retryStep.id}_${retryStep.attemptCount}`;
-        await enqueueWorkflowRun(this.queue, job.data, { delay, jobId });
+    try {
+      const output = await this.executor.execute(workflow, runId);
+
+      if (output === undefined) {
+        const retryStep = await this.db.stepExecution.findFirst({
+          where: {
+            workflowRunId: runId,
+            status: "RETRY_WAIT",
+            nextRetryAt: { not: null },
+          },
+          orderBy: {
+            nextRetryAt: "asc",
+          },
+        });
+
+        if (retryStep?.nextRetryAt) {
+          const delay = Math.max(0, retryStep.nextRetryAt.getTime() - Date.now());
+          const jobId = `retry_${runId}_${retryStep.id}_${retryStep.attemptCount}`;
+          await enqueueWorkflowRun(this.queue, job.data, { delay, jobId });
+        }
+      }
+    } finally {
+      if (releaseSlot) {
+        await releaseSlot();
       }
     }
   }
 
   async close(): Promise<void> {
+    await this.concurrencyCoordinator.close();
     await this.worker.close();
     if (this.ownsQueue) {
       await this.queue.close();
+    }
+    if (this.ownsRedis && this.redisClient) {
+      await this.redisClient.quit().catch(() => this.redisClient?.disconnect());
     }
   }
 }
