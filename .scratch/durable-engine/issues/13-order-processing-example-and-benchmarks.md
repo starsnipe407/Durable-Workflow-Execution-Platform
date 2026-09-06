@@ -5,7 +5,7 @@ The canonical end-to-end reference application (examples/order-processing) demon
 
 **Blocked by:** 09: Event Ingestion and Bindings, 10: Distributed Concurrency and Rate Limiting, 12: Next.js Observability Dashboard
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 - [ ] Implement process-order workflow covering sequential steps, retries, idempotency keys, and parallel sibling steps.
 - [ ] Create benchmark harness measuring completed workflows/sec across worker scaling (1, 2, 4, 8 workers).
