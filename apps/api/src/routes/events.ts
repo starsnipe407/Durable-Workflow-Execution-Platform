@@ -21,7 +21,11 @@ export function eventsRoutes(
     async (request, reply) => {
       const parsed = ingestEventSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.status(400).send({ error: 'Bad Request', issues: parsed.error.issues });
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Invalid request body',
+          details: parsed.error.format(),
+        });
       }
 
       const data = parsed.data;
