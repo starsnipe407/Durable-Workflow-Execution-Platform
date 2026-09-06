@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { PrismaClient, Prisma } from '@durable/database';
 import { Queue } from 'bullmq';
+import { enqueueWorkflowRun } from '@durable/worker';
 import { z } from 'zod';
 import { authenticateApiKey } from '../plugins/auth';
 
@@ -94,8 +95,8 @@ export function eventsRoutes(
         // 4. Enqueue runs
         if (options.queue) {
           for (const run of createdRuns) {
-            await options.queue.add(
-              'run',
+            await enqueueWorkflowRun(
+              options.queue,
               {
                 runId: run.id,
                 workflowName: run.workflowName,

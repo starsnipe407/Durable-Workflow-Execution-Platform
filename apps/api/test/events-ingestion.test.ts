@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import crypto from 'node:crypto';
 import { PrismaClient } from '@durable/database';
 import { Queue } from 'bullmq';
@@ -17,14 +17,13 @@ describe('POST /events', () => {
   let app: ReturnType<typeof createApp>;
   let tenantId: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     app = createApp({ prisma, queue, redis });
     await app.ready();
     
-    await prisma.tenant.deleteMany();
     const tenant = await prisma.tenant.create({
       data: {
-        name: 'Test Tenant',
+        name: 'Test Tenant Events',
         apiKeys: {
           create: [{ keyHash: hashApiKey('test-events-key'), label: 'Test Key' }]
         }
@@ -33,9 +32,18 @@ describe('POST /events', () => {
     tenantId = tenant.id;
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
+    await prisma.executionEvent.deleteMany({ where: { tenantId } });
+    await prisma.workflowRun.deleteMany({ where: { tenantId } });
+    await prisma.workflowEventBinding.deleteMany({ where: { tenantId } });
+    await prisma.ingestedEvent.deleteMany({ where: { tenantId } });
+    await prisma.apiKey.deleteMany({ where: { tenantId } });
+    await prisma.tenant.delete({ where: { id: tenantId } });
+    
     await app.close();
-    await prisma.tenant.deleteMany();
+    await queue.close();
+    await redis.quit();
+    await prisma.$disconnect();
   });
 
   it('fails with 400 on missing id or name', async () => {
@@ -149,7 +157,7 @@ describe('POST /events', () => {
     expect([res1.statusCode, res2.statusCode]).toContain(200);
 
     const events = await prisma.ingestedEvent.findMany({
-      where: { eventId: 'evt-4' }
+      where: { tenantId, eventId: 'evt-4' }
     });
     expect(events.length).toBe(1);
   });
