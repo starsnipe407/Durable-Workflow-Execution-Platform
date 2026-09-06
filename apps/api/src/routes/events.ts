@@ -96,26 +96,28 @@ export function eventsRoutes(
           return runs;
         });
 
-        // 4. Enqueue runs
+        // 4. Enqueue runs concurrently
         if (options.queue) {
-          for (const run of createdRuns) {
-            await enqueueWorkflowRun(
-              options.queue,
-              {
-                runId: run.id,
-                workflowName: run.workflowName,
-                workflowVersion: run.workflowVersion,
-                tenantId: run.tenantId,
-              },
-              { jobId: `run_${run.id}` }
-            );
-          }
+          await Promise.all(
+            createdRuns.map((run) =>
+              enqueueWorkflowRun(
+                options.queue!,
+                {
+                  runId: run.id,
+                  workflowName: run.workflowName,
+                  workflowVersion: run.workflowVersion,
+                  tenantId: run.tenantId,
+                },
+                { jobId: `run_${run.id}` }
+              )
+            )
+          );
         }
 
         return reply.status(201).send({ status: 'processed', eventId: data.id, runs: createdRuns });
       } catch (err: any) {
         // Handle concurrent insert P2002
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        if (err?.code === 'P2002' || (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) {
           return reply.status(200).send({ status: 'duplicate', eventId: data.id, runs: [] });
         }
         throw err;

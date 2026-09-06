@@ -1,17 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import crypto from 'node:crypto';
 import { PrismaClient } from '@durable/database';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { createApp } from '../src/app';
+import { hashApiKey } from '../src/plugins/auth';
 
 const prisma = new PrismaClient();
-const redis = new Redis({ host: 'localhost', port: 6380 });
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6380');
 const queue = new Queue('workflow-runs', { connection: redis });
-
-function hashApiKey(apiKey: string): string {
-  return crypto.createHash('sha256').update(apiKey).digest('hex');
-}
+const apiKey = `test-events-key-${crypto.randomUUID()}`;
 
 describe('POST /events', () => {
   let app: ReturnType<typeof createApp>;
@@ -23,9 +21,9 @@ describe('POST /events', () => {
     
     const tenant = await prisma.tenant.create({
       data: {
-        name: 'Test Tenant Events',
+        name: `Test Tenant Events ${crypto.randomUUID()}`,
         apiKeys: {
-          create: [{ keyHash: hashApiKey('test-events-key'), label: 'Test Key' }]
+          create: [{ keyHash: hashApiKey(apiKey), label: 'Test Key' }]
         }
       }
     });
@@ -33,12 +31,22 @@ describe('POST /events', () => {
   });
 
   afterAll(async () => {
-    await prisma.executionEvent.deleteMany({ where: { tenantId } });
-    await prisma.workflowRun.deleteMany({ where: { tenantId } });
-    await prisma.workflowEventBinding.deleteMany({ where: { tenantId } });
-    await prisma.ingestedEvent.deleteMany({ where: { tenantId } });
-    await prisma.apiKey.deleteMany({ where: { tenantId } });
-    await prisma.tenant.delete({ where: { id: tenantId } });
+    if (tenantId) {
+      const runs = await prisma.workflowRun.findMany({
+        where: { tenantId },
+        select: { id: true },
+      });
+      for (const r of runs) {
+        const job = await queue.getJob(`run_${r.id}`);
+        if (job) await job.remove();
+      }
+      await prisma.executionEvent.deleteMany({ where: { tenantId } });
+      await prisma.workflowRun.deleteMany({ where: { tenantId } });
+      await prisma.workflowEventBinding.deleteMany({ where: { tenantId } });
+      await prisma.ingestedEvent.deleteMany({ where: { tenantId } });
+      await prisma.apiKey.deleteMany({ where: { tenantId } });
+      await prisma.tenant.delete({ where: { id: tenantId } });
+    }
     
     await app.close();
     await queue.close();
@@ -50,7 +58,7 @@ describe('POST /events', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/events',
-      headers: { authorization: 'Bearer test-events-key' },
+      headers: { authorization: `Bearer ${apiKey}` },
       payload: { id: 'evt-1' } // missing name
     });
     expect(res.statusCode).toBe(400);
@@ -58,7 +66,7 @@ describe('POST /events', () => {
     const res2 = await app.inject({
       method: 'POST',
       url: '/events',
-      headers: { authorization: 'Bearer test-events-key' },
+      headers: { authorization: `Bearer ${apiKey}` },
       payload: { name: 'order.created' } // missing id
     });
     expect(res2.statusCode).toBe(400);
@@ -68,7 +76,7 @@ describe('POST /events', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/events',
-      headers: { authorization: 'Bearer test-events-key' },
+      headers: { authorization: `Bearer ${apiKey}` },
       payload: { id: 'evt-1', name: 'user.created', data: { userId: 123 } }
     });
     expect(res.statusCode).toBe(201);
@@ -93,7 +101,7 @@ describe('POST /events', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/events',
-      headers: { authorization: 'Bearer test-events-key' },
+      headers: { authorization: `Bearer ${apiKey}` },
       payload: { id: 'evt-2', name: 'order.created', data: { orderId: 456 } }
     });
     expect(res.statusCode).toBe(201);
@@ -128,14 +136,14 @@ describe('POST /events', () => {
     await app.inject({
       method: 'POST',
       url: '/events',
-      headers: { authorization: 'Bearer test-events-key' },
+      headers: { authorization: `Bearer ${apiKey}` },
       payload: { id: 'evt-3', name: 'login' }
     });
 
     const res = await app.inject({
       method: 'POST',
       url: '/events',
-      headers: { authorization: 'Bearer test-events-key' },
+      headers: { authorization: `Bearer ${apiKey}` },
       payload: { id: 'evt-3', name: 'login' }
     });
     expect(res.statusCode).toBe(200);
@@ -147,13 +155,13 @@ describe('POST /events', () => {
       app.inject({
         method: 'POST',
         url: '/events',
-        headers: { authorization: 'Bearer test-events-key' },
+        headers: { authorization: `Bearer ${apiKey}` },
         payload: { id: 'evt-4', name: 'signup' }
       }),
       app.inject({
         method: 'POST',
         url: '/events',
-        headers: { authorization: 'Bearer test-events-key' },
+        headers: { authorization: `Bearer ${apiKey}` },
         payload: { id: 'evt-4', name: 'signup' }
       })
     ];
