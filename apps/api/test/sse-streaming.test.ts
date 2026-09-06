@@ -4,7 +4,7 @@ import { PrismaClient } from '@durable/database';
 import { Redis } from 'ioredis';
 import { createApp } from '../src/app';
 import { hashApiKey } from '../src/plugins/auth';
-import { createWorkflowClient } from '@durable/client';
+import { createWorkflowClient } from '../../../packages/client/src/index';
 import { defineWorkflow } from '@durable/workflow-sdk';
 import {
   WorkflowRegistry,

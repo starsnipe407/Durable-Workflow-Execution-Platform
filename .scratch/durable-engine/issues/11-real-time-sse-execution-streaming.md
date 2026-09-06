@@ -5,9 +5,9 @@ Live streaming execution observability via Server-Sent Events (GET /runs/:runId/
 
 **Blocked by:** 08: Fastify Control API, Idempotency, and Client SDK
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Implement SSE endpoint GET /runs/:runId/events in Fastify with tenant access control.
-- [ ] On connection, replay durable events from PostgreSQL starting after Last-Event-ID.
-- [ ] Publish real-time event notifications via Redis Pub/Sub wake-up channel on state mutations, with subscriber fetching authoritative event payload from PostgreSQL.
-- [ ] Integration tests verifying SSE replay across simulated client disconnection and reconnection.
+- [x] Implement SSE endpoint GET /runs/:runId/events in Fastify with tenant access control.
+- [x] On connection, replay durable events from PostgreSQL starting after Last-Event-ID.
+- [x] Publish real-time event notifications via Redis Pub/Sub wake-up channel on state mutations, with subscriber fetching authoritative event payload from PostgreSQL.
+- [x] Integration tests verifying SSE replay across simulated client disconnection and reconnection.
