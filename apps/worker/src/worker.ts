@@ -221,3 +221,7 @@ export class WorkflowWorker {
     }
   }
 }
+
+export function createWorker(options: WorkflowWorkerOptions): WorkflowWorker {
+  return new WorkflowWorker(options);
+}
