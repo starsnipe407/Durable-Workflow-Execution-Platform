@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { DurableClient } from "@durable/client";
 import type { OrderInput } from "./types.js";
 
@@ -74,8 +76,8 @@ export async function main(
       break;
     }
 
-    if (event.eventType === "WORKFLOW_FAILED") {
-      console.error("\n❌ Workflow execution failed:", event.payload);
+    if (event.eventType === "WORKFLOW_FAILED" || event.eventType === "WORKFLOW_CANCELLED" || event.eventType === "WORKFLOW_TIMED_OUT") {
+      console.error(`\n❌ Workflow execution finished with status ${event.eventType}:`, event.payload);
       process.exitCode = 1;
       break;
     }
@@ -85,7 +87,7 @@ export async function main(
 const isDirectlyExecuted =
   typeof process !== "undefined" &&
   process.argv[1] &&
-  (process.argv[1].endsWith("cli.ts") || process.argv[1].endsWith("cli.js"));
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isDirectlyExecuted) {
   main().catch((err) => {
