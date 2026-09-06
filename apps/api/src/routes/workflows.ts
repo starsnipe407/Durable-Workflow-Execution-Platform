@@ -18,7 +18,7 @@ export function workflowsRoutes(app: FastifyInstance, options: WorkflowsRoutesOp
   app.get('/workflows', { preHandler: authenticateApiKey(options.prisma) }, async (request, reply) => {
     const tenantId = request.tenantId;
 
-    const [definitions, eventBindings, runs] = await Promise.all([
+    const [definitions, eventBindings, runAggregates, runVersions] = await Promise.all([
       options.prisma.workflowDefinition.findMany({
         where: { tenantId },
         orderBy: { version: 'asc' },
@@ -26,10 +26,16 @@ export function workflowsRoutes(app: FastifyInstance, options: WorkflowsRoutesOp
       options.prisma.workflowEventBinding.findMany({
         where: { tenantId },
       }),
+      options.prisma.workflowRun.groupBy({
+        by: ['workflowName'],
+        where: { tenantId },
+        _count: { _all: true },
+        _max: { createdAt: true },
+      }),
       options.prisma.workflowRun.findMany({
         where: { tenantId },
-        select: { workflowName: true, workflowVersion: true, createdAt: true },
-        orderBy: { createdAt: 'desc' },
+        distinct: ['workflowName', 'workflowVersion'],
+        select: { workflowName: true, workflowVersion: true },
       }),
     ]);
 
@@ -68,24 +74,28 @@ export function workflowsRoutes(app: FastifyInstance, options: WorkflowsRoutesOp
       });
     }
 
-    for (const run of runs) {
-      const wf = getOrCreate(run.workflowName);
-      if (run.workflowVersion) {
-        wf.versions.add(run.workflowVersion);
+    for (const rv of runVersions) {
+      const wf = getOrCreate(rv.workflowName);
+      if (rv.workflowVersion) {
+        wf.versions.add(rv.workflowVersion);
       }
-      if (wf.lastRunAt === null && run.createdAt) {
-        wf.lastRunAt = run.createdAt.toISOString();
-      }
-      wf.totalRuns += 1;
     }
 
-    const workflows = Array.from(workflowMap.values()).map((wf) => ({
-      name: wf.name,
-      versions: Array.from(wf.versions).sort(),
-      triggers: wf.triggers,
-      totalRuns: wf.totalRuns,
-      lastRunAt: wf.lastRunAt,
-    }));
+    for (const agg of runAggregates) {
+      const wf = getOrCreate(agg.workflowName);
+      wf.totalRuns = agg._count._all;
+      wf.lastRunAt = agg._max.createdAt ? agg._max.createdAt.toISOString() : null;
+    }
+
+    const workflows = Array.from(workflowMap.values())
+      .map((wf) => ({
+        name: wf.name,
+        versions: Array.from(wf.versions).sort(),
+        triggers: wf.triggers,
+        totalRuns: wf.totalRuns,
+        lastRunAt: wf.lastRunAt,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     return reply.status(200).send({ workflows });
   });

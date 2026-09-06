@@ -236,6 +236,7 @@ describe('Metrics & Workflows API & Run Enrichment', () => {
       const body1 = res1.json();
       expect(body1.workflows).toBeDefined();
       expect(Array.isArray(body1.workflows)).toBe(true);
+      expect(body1.workflows.map((w: any) => w.name)).toEqual(['data-sync', 'order-process', 'user-onboard']);
 
       const orderProcess = body1.workflows.find((w: any) => w.name === 'order-process');
       expect(orderProcess).toBeDefined();
@@ -408,6 +409,43 @@ describe('Metrics & Workflows API & Run Enrichment', () => {
       });
       expect(resPage4.statusCode).toBe(200);
       expect(resPage4.json().runs.length).toBe(0);
+    });
+
+    it('defensively sanitizes invalid, negative, or excessive limit and offset', async () => {
+      // Seed 2 runs
+      await prisma.workflowRun.createMany({
+        data: [
+          { tenantId: tenant1Id, workflowName: 'defensive-wf', workflowVersion: '1.0.0', input: {} },
+          { tenantId: tenant1Id, workflowName: 'defensive-wf', workflowVersion: '1.0.0', input: {} },
+        ],
+      });
+
+      // Invalid string for limit and offset
+      const resInvalid = await app.inject({
+        method: 'GET',
+        url: '/runs?workflowName=defensive-wf&limit=invalid&offset=not-a-number',
+        headers: { authorization: `Bearer ${apiKey1}` },
+      });
+      expect(resInvalid.statusCode).toBe(200);
+      expect(resInvalid.json().runs.length).toBe(2);
+
+      // Negative values for limit and offset
+      const resNegative = await app.inject({
+        method: 'GET',
+        url: '/runs?workflowName=defensive-wf&limit=-10&offset=-5',
+        headers: { authorization: `Bearer ${apiKey1}` },
+      });
+      expect(resNegative.statusCode).toBe(200);
+      expect(resNegative.json().runs.length).toBe(2);
+
+      // Zero limit defaults to 20
+      const resZeroLimit = await app.inject({
+        method: 'GET',
+        url: '/runs?workflowName=defensive-wf&limit=0',
+        headers: { authorization: `Bearer ${apiKey1}` },
+      });
+      expect(resZeroLimit.statusCode).toBe(200);
+      expect(resZeroLimit.json().runs.length).toBe(2);
     });
   });
 });
