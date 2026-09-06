@@ -140,6 +140,11 @@ export function runsRoutes(
       include: {
         stepExecutions: {
           orderBy: { createdAt: 'asc' },
+          include: {
+            stepAttempts: {
+              orderBy: { attemptNumber: 'asc' },
+            },
+          },
         },
       },
     });
@@ -152,8 +157,9 @@ export function runsRoutes(
   });
 
   app.get('/runs', { preHandler: authenticateApiKey(options.prisma) }, async (request, reply) => {
-    const query = request.query as { status?: string; workflowName?: string; limit?: string };
+    const query = request.query as { status?: string; workflowName?: string; limit?: string; offset?: string };
     const limit = query.limit ? parseInt(query.limit, 10) : 20;
+    const offset = query.offset ? parseInt(query.offset, 10) : undefined;
     
     const runs = await options.prisma.workflowRun.findMany({
       where: {
@@ -162,6 +168,7 @@ export function runsRoutes(
         ...(query.workflowName ? { workflowName: query.workflowName } : {}),
       },
       orderBy: { createdAt: 'desc' },
+      skip: offset,
       take: Math.min(limit, 100),
     });
 

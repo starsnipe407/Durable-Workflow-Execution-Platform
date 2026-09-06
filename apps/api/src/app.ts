@@ -5,6 +5,8 @@ import { Redis } from 'ioredis';
 import { authenticateApiKey } from './plugins/auth';
 import { runsRoutes } from './routes/runs';
 import { eventsRoutes } from './routes/events';
+import { metricsRoutes } from './routes/metrics';
+import { workflowsRoutes } from './routes/workflows';
 import { rateLimitPlugin, RateLimitOptions } from './plugins/rate-limit';
 import { RunEventsMultiplexer } from './services/run-events-multiplexer';
 import './types'; // ensure fastify request is augmented
@@ -51,6 +53,8 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
 
   runsRoutes(app, { ...options, multiplexer });
   eventsRoutes(app, options);
+  metricsRoutes(app, options);
+  workflowsRoutes(app, options);
 
   return app;
 }
