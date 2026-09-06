@@ -5,6 +5,14 @@ import { Redis } from 'ioredis';
 import { createApp } from '../src/app';
 import { hashApiKey } from '../src/plugins/auth';
 import { createWorkflowClient } from '../../../packages/client/src/index';
+import { defineWorkflow } from '@durable/workflow-sdk';
+import {
+  WorkflowRegistry,
+  WorkflowWorker,
+  createWorkflowQueue,
+  type WorkflowRunJobData,
+} from '@durable/worker';
+import type { Queue } from 'bullmq';
 import { getRunEventsChannel, publishRunEventWakeup } from '@durable/shared';
 
 const prisma = new PrismaClient();
@@ -17,6 +25,9 @@ describe('Server-Sent Events (SSE) Streaming & Multiplexer', () => {
   let apiKey1: string;
   let tenant2Id: string;
   let apiKey2: string;
+  let queue: Queue<WorkflowRunJobData>;
+  let registry: WorkflowRegistry;
+  let worker: WorkflowWorker;
 
   beforeAll(async () => {
     // Create tenant 1
@@ -47,12 +58,37 @@ describe('Server-Sent Events (SSE) Streaming & Multiplexer', () => {
       },
     });
 
-    app = createApp({ prisma, redis });
+    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6380';
+    const queueName = `sse-e2e-runs-${crypto.randomUUID()}`;
+    queue = createWorkflowQueue(redisUrl, queueName);
+    registry = new WorkflowRegistry();
+    worker = new WorkflowWorker({
+      db: prisma,
+      registry,
+      queue,
+      connectionOrUrl: redisUrl,
+      redis,
+      workerId: `sse-worker-${crypto.randomUUID()}`,
+    });
+
+    app = createApp({
+      prisma,
+      redis,
+      queue,
+      sseKeepaliveIntervalMs: 50,
+    } as any);
     const address = await app.listen({ port: 0, host: '127.0.0.1' });
     baseUrl = address;
   });
 
   afterAll(async () => {
+    if (worker) {
+      await worker.close();
+    }
+    if (queue) {
+      await queue.obliterate({ force: true }).catch(() => {});
+      await queue.close();
+    }
     await app.close();
     // Strictly scoped DB cleanup by tenant IDs
     if (tenant1Id || tenant2Id) {
@@ -321,4 +357,224 @@ describe('Server-Sent Events (SSE) Streaming & Multiplexer', () => {
     // Allow server request close to process
     await new Promise((r) => setTimeout(r, 100));
   });
+
+  it('streams real-time execution events end-to-end with active WorkflowWorker', async () => {
+    const wfName = `LiveWorkerWorkflow-${crypto.randomUUID()}`;
+    const liveWorkflow = defineWorkflow({ name: wfName, version: '1.0.0' }, async ({ step }) => {
+      await step.run('step-1', async () => 'result-1');
+      await step.run('step-2', async () => 'result-2');
+      return { success: true };
+    });
+    registry.register(liveWorkflow);
+
+    // Create workflow run via POST /runs
+    const resCreate = await fetch(`${baseUrl}/runs`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey1,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflowName: wfName,
+        workflowVersion: '1.0.0',
+        input: { test: true },
+      }),
+    });
+    expect(resCreate.status).toBe(201);
+    const run = await resCreate.json();
+
+    const client = createWorkflowClient({ baseUrl, apiKey: apiKey1 });
+    const receivedEvents: any[] = [];
+
+    for await (const event of client.runs.streamEvents(run.id)) {
+      receivedEvents.push(event);
+    }
+
+    const eventTypes = receivedEvents.map((e) => e.eventType);
+    expect(eventTypes).toEqual([
+      'WORKFLOW_CREATED',
+      'WORKFLOW_STARTED',
+      'STEP_STARTED',
+      'STEP_COMPLETED',
+      'STEP_STARTED',
+      'STEP_COMPLETED',
+      'WORKFLOW_COMPLETED',
+    ]);
+
+    // Check step keys and outputs
+    expect((receivedEvents[2].payload as any).stepKey).toBe('step-1');
+    expect((receivedEvents[3].payload as any).output).toBe('result-1');
+    expect((receivedEvents[4].payload as any).stepKey).toBe('step-2');
+    expect((receivedEvents[5].payload as any).output).toBe('result-2');
+    expect((receivedEvents[6].payload as any).output).toEqual({ success: true });
+
+    // Verify run status in DB
+    const finalRun = await prisma.workflowRun.findUnique({ where: { id: run.id } });
+    expect(finalRun?.status).toBe('COMPLETED');
+  });
+
+  it('recovers from client disconnection via Last-Event-ID with zero duplicates and zero dropped events', async () => {
+    const wfName = `DisconnectReconnectWorkflow-${crypto.randomUUID()}`;
+    const multiStepWorkflow = defineWorkflow({ name: wfName, version: '1.0.0' }, async ({ step }) => {
+      await step.run('step-1', async () => 'step-1-done');
+      // Delay to ensure step-1 completes and client disconnects before step-2 completes
+      await new Promise((r) => setTimeout(r, 200));
+      await step.run('step-2', async () => 'step-2-done');
+      return { allDone: true };
+    });
+    registry.register(multiStepWorkflow);
+
+    const resCreate = await fetch(`${baseUrl}/runs`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey1,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflowName: wfName,
+        workflowVersion: '1.0.0',
+      }),
+    });
+    expect(resCreate.status).toBe(201);
+    const run = await resCreate.json();
+
+    const client = createWorkflowClient({ baseUrl, apiKey: apiKey1 });
+    const abortController = new AbortController();
+    const firstEvents: any[] = [];
+    let lastEventId: string | undefined;
+
+    try {
+      for await (const event of client.runs.streamEvents(run.id, { signal: abortController.signal })) {
+        firstEvents.push(event);
+        if (event.eventType === 'STEP_COMPLETED') {
+          lastEventId = event.id;
+          abortController.abort();
+          break;
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') throw err;
+    }
+
+    expect(lastEventId).toBeDefined();
+    expect(firstEvents.map((e) => e.eventType)).toContain('STEP_COMPLETED');
+
+    // Reconnect with lastEventId
+    const secondEvents: any[] = [];
+    for await (const event of client.runs.streamEvents(run.id, { lastEventId })) {
+      secondEvents.push(event);
+    }
+
+    // Verify zero duplicates: no event in second batch has ID <= lastEventId
+    for (const ev of secondEvents) {
+      expect(BigInt(ev.id)).toBeGreaterThan(BigInt(lastEventId!));
+    }
+
+    // Verify subsequent events arrived
+    const secondTypes = secondEvents.map((e) => e.eventType);
+    expect(secondTypes).toContain('STEP_STARTED');
+    expect(secondTypes).toContain('STEP_COMPLETED');
+    expect(secondTypes).toContain('WORKFLOW_COMPLETED');
+
+    // Verify combined events have no duplicates and cover the entire run
+    const allReceivedIds = [...firstEvents.map((e) => e.id), ...secondEvents.map((e) => e.id)];
+    const uniqueReceivedIds = new Set(allReceivedIds);
+    expect(uniqueReceivedIds.size).toBe(allReceivedIds.length); // zero duplicates
+
+    const dbEvents = await prisma.executionEvent.findMany({
+      where: { workflowRunId: run.id },
+      orderBy: { id: 'asc' },
+    });
+    expect(allReceivedIds).toEqual(dbEvents.map((e) => e.id.toString())); // zero dropped
+  });
+
+  it('terminates stream cleanly on WORKFLOW_FAILED', async () => {
+    const wfName = `FailingWorkflow-${crypto.randomUUID()}`;
+    const failingWorkflow = defineWorkflow({ name: wfName, version: '1.0.0' }, async ({ step }) => {
+      await step.run(
+        'fatal-step',
+        { retries: 0 },
+        async () => {
+          throw new Error('Fatal error occurred in step');
+        }
+      );
+    });
+    registry.register(failingWorkflow);
+
+    const resCreate = await fetch(`${baseUrl}/runs`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey1,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflowName: wfName,
+        workflowVersion: '1.0.0',
+      }),
+    });
+    expect(resCreate.status).toBe(201);
+    const run = await resCreate.json();
+
+    const client = createWorkflowClient({ baseUrl, apiKey: apiKey1 });
+    const receivedEvents: any[] = [];
+
+    for await (const event of client.runs.streamEvents(run.id)) {
+      receivedEvents.push(event);
+    }
+
+    const eventTypes = receivedEvents.map((e) => e.eventType);
+    expect(eventTypes).toContain('WORKFLOW_FAILED');
+    expect(eventTypes[eventTypes.length - 1]).toBe('WORKFLOW_FAILED');
+
+    const failedEvent = receivedEvents.find((e) => e.eventType === 'WORKFLOW_FAILED');
+    expect(failedEvent?.payload).toEqual(expect.objectContaining({ error: 'Fatal error occurred in step' }));
+
+    const finalRun = await prisma.workflowRun.findUnique({ where: { id: run.id } });
+    expect(finalRun?.status).toBe('FAILED');
+  });
+
+  it('emits keepalive ping comments on idle connections without corrupting event stream', async () => {
+    // Create an idle running run
+    const run = await prisma.workflowRun.create({
+      data: {
+        tenantId: tenant1Id,
+        workflowName: 'IdleKeepaliveWorkflow',
+        workflowVersion: '1.0.0',
+        input: {},
+        status: 'RUNNING',
+      },
+    });
+
+    const abortController = new AbortController();
+    const res = await fetch(`${baseUrl}/runs/${run.id}/events`, {
+      headers: { 'x-api-key': apiKey1 },
+      signal: abortController.signal,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = '';
+    const startTime = Date.now();
+
+    try {
+      while (Date.now() - startTime < 3000) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulatedText += decoder.decode(value, { stream: true });
+        if (accumulatedText.includes(': keepalive\n\n')) {
+          break;
+        }
+      }
+    } finally {
+      abortController.abort();
+      try {
+        await reader.cancel();
+      } catch {}
+    }
+
+    expect(accumulatedText).toContain(': keepalive\n\n');
+  });
 });
+

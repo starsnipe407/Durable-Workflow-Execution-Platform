@@ -9,18 +9,19 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "fastify": "^5.0.0",
-    "zod": "^3.0.0",
     "@durable/database": "workspace:*",
     "@durable/shared": "workspace:*",
     "@durable/worker": "workspace:*",
     "bullmq": "^6.0.0",
-    "ioredis": "^6.0.0"
+    "fastify": "^5.0.0",
+    "ioredis": "^6.0.0",
+    "zod": "^3.0.0"
   },
   "devDependencies": {
-    "vitest": "^2.1.8",
-    "typescript": "^5.6.3",
+    "@durable/workflow-sdk": "workspace:*",
     "@types/node": "^20.0.0",
-    "dotenv-cli": "^7.4.2"
+    "dotenv-cli": "^7.4.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
   }
 }

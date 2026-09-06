@@ -23,6 +23,7 @@ export function runsRoutes(
     queue?: Queue;
     redis?: Redis;
     multiplexer?: RunEventsMultiplexer;
+    sseKeepaliveIntervalMs?: number;
   }
 ) {
   app.post('/runs', { preHandler: authenticateApiKey(options.prisma) }, async (request, reply) => {
@@ -314,11 +315,15 @@ export function runsRoutes(
     });
     reply.raw.flushHeaders?.();
 
+    const envInterval = process.env.SSE_KEEPALIVE_INTERVAL_MS
+      ? parseInt(process.env.SSE_KEEPALIVE_INTERVAL_MS, 10)
+      : undefined;
+    const keepaliveMs = options.sseKeepaliveIntervalMs ?? envInterval ?? 15_000;
     const keepaliveTimer = setInterval(() => {
       if (!reply.raw.writableEnded) {
         reply.raw.write(': keepalive\n\n');
       }
-    }, 15_000);
+    }, keepaliveMs);
 
     let isFetching = false;
     let hasPendingWakeup = false;

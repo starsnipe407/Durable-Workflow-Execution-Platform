@@ -15,6 +15,7 @@ export interface CreateAppOptions {
   redis?: Redis;
   multiplexer?: RunEventsMultiplexer;
   rateLimitOptions?: Omit<RateLimitOptions, 'redis'>;
+  sseKeepaliveIntervalMs?: number;
 }
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
