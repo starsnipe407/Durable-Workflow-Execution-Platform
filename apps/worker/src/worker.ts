@@ -61,18 +61,18 @@ export class WorkflowWorker {
       this.concurrencyCoordinator = new ConcurrencyCoordinator(options.redis);
       this.ownsRedis = false;
     } else {
-      let redisUrl: string;
       if (typeof options.connectionOrUrl === "string") {
-        redisUrl = options.connectionOrUrl;
-      } else if (
-        options.connectionOrUrl &&
-        typeof (options.connectionOrUrl as any).url === "string"
-      ) {
-        redisUrl = (options.connectionOrUrl as any).url;
+        this.redisClient = new Redis(options.connectionOrUrl, { maxRetriesPerRequest: null });
+      } else if (options.connectionOrUrl && typeof options.connectionOrUrl === "object") {
+        this.redisClient = new Redis({
+          ...(options.connectionOrUrl as any),
+          maxRetriesPerRequest: null,
+        });
       } else {
-        redisUrl = process.env.REDIS_URL || "redis://localhost:6380";
+        this.redisClient = new Redis(process.env.REDIS_URL || "redis://localhost:6380", {
+          maxRetriesPerRequest: null,
+        });
       }
-      this.redisClient = new Redis(redisUrl, { maxRetriesPerRequest: null });
       this.ownsRedis = true;
       this.concurrencyCoordinator = new ConcurrencyCoordinator(this.redisClient);
     }
@@ -182,8 +182,8 @@ export class WorkflowWorker {
   }
 
   async close(): Promise<void> {
-    await this.concurrencyCoordinator.close();
     await this.worker.close();
+    await this.concurrencyCoordinator.close();
     if (this.ownsQueue) {
       await this.queue.close();
     }

@@ -322,4 +322,33 @@ describe("Distributed Concurrency Coordinator", () => {
     members = await redis.zrange(globalKey, 0, -1);
     expect(members).toHaveLength(0);
   });
+
+  it("propagates error when partition key selector throws rather than failing open", async () => {
+    const coordinator = new ConcurrencyCoordinator(redis);
+    const wfConfig = {
+      key: () => {
+        throw new Error("Malicious or invalid partition key evaluation");
+      },
+      keyLimit: 1,
+    };
+
+    await expect(
+      coordinator.tryAcquire("run-bad-key", wfConfig, {}, "error-wf")
+    ).rejects.toThrow("Malicious or invalid partition key evaluation");
+
+    await coordinator.close();
+  });
+
+  it("supports ConnectionOptions object format without falling back to default localhost", async () => {
+    const customWorker = new WorkflowWorker({
+      db,
+      registry: new WorkflowRegistry(),
+      connectionOrUrl: { host: "127.0.0.1", port: 6380 },
+      workerId: "connection-options-worker",
+      concurrency: 1,
+    });
+
+    expect(customWorker).toBeDefined();
+    await customWorker.close();
+  });
 });

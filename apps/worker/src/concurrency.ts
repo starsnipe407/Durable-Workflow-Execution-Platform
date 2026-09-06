@@ -120,36 +120,13 @@ export class ConcurrencyCoordinator {
   }
 
   public async tryAcquire(
-    arg1: string,
-    arg2: any,
-    arg3?: any,
-    arg4?: string
+    runId: string,
+    config: WorkflowConcurrencyConfig<any>,
+    input: any,
+    workflowName: string = "workflow"
   ): Promise<ConcurrencySlot> {
-    let runId: string;
-    let workflowName: string;
-    let config: WorkflowConcurrencyConfig<any>;
-    let input: any;
-
-    if (typeof arg2 === "string") {
-      workflowName = arg1;
-      runId = arg2;
-      config = arg3 ?? {};
-      input = arg4;
-    } else {
-      runId = arg1;
-      config = arg2 ?? {};
-      input = arg3;
-      workflowName = arg4 ?? (config as any).workflowName ?? "workflow";
-    }
-
-    let partitionKeyValue: string | undefined;
-    if (typeof config.key === "function") {
-      try {
-        partitionKeyValue = config.key({ input });
-      } catch {
-        partitionKeyValue = undefined;
-      }
-    }
+    const partitionKeyValue =
+      typeof config.key === "function" ? config.key({ input }) : undefined;
 
     const globalLimit = typeof config.limit === "number" && config.limit > 0 ? config.limit : 0;
     const keyLimit =
@@ -197,9 +174,14 @@ export class ConcurrencyCoordinator {
       };
     }
 
+    const existing = this.activeLeases.get(runId);
+    if (existing?.timer) {
+      clearInterval(existing.timer);
+    }
+
     const intervalMs = Math.max(100, Math.floor((ttlSeconds * 1000) / 2));
     const timer = setInterval(() => {
-      this.renew(runId, globalKey, partitionKey, ttlSeconds).catch(() => {});
+      this.renew(runId).catch(() => {});
     }, intervalMs);
     if (typeof timer.unref === "function") {
       timer.unref();
@@ -219,30 +201,25 @@ export class ConcurrencyCoordinator {
     };
   }
 
-  public async renew(
-    runId: string,
-    globalKey?: string,
-    partitionKey?: string,
-    ttlSeconds?: number
-  ): Promise<boolean> {
+  public async renew(runId: string): Promise<boolean> {
     const lease = this.activeLeases.get(runId);
-    const gKey = globalKey ?? lease?.globalKey ?? "";
-    const pKey = partitionKey ?? lease?.partitionKey ?? "";
-    const ttl = ttlSeconds ?? lease?.ttlSeconds ?? 30;
-
-    if (!gKey && !pKey) {
+    if (!lease) {
+      return false;
+    }
+    const { globalKey, partitionKey, ttlSeconds } = lease;
+    if (!globalKey && !partitionKey) {
       return false;
     }
 
     const now = Date.now();
-    const ttlMs = ttl * 1000;
-    const keyExpireSec = Math.max(Math.ceil(ttl * 2), 60);
+    const ttlMs = ttlSeconds * 1000;
+    const keyExpireSec = Math.max(Math.ceil(ttlSeconds * 2), 60);
 
     const result = (await this.redis.eval(
       RENEW_SCRIPT,
       2,
-      gKey,
-      pKey,
+      globalKey,
+      partitionKey,
       runId,
       now,
       ttlMs,
