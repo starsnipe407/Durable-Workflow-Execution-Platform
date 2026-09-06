@@ -26,7 +26,6 @@ export function RunActions({ run, onActionSuccess }: RunActionsProps) {
     try {
       const res = await fetch(`/api/runs/${run.id}/retry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!res.ok) {
@@ -50,7 +49,6 @@ export function RunActions({ run, onActionSuccess }: RunActionsProps) {
     try {
       const res = await fetch(`/api/runs/${run.id}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!res.ok) {
