@@ -116,6 +116,12 @@ describe('POST /events', () => {
     });
     expect(execEvents.length).toBe(2);
     expect(execEvents[0].eventType).toBe('WORKFLOW_CREATED');
+
+    for (const run of runs) {
+      const job = await queue.getJob(`run_${run.id}`);
+      expect(job).toBeDefined();
+      expect(job?.data.runId).toBe(run.id);
+    }
   });
 
   it('retrying with identical event id returns HTTP 200 with { status: "duplicate" }', async () => {

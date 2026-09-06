@@ -42,7 +42,6 @@ export interface SendEventResponse {
   runs: WorkflowRun[];
 }
 
-
 export class WorkflowClientError extends Error {
   statusCode: number;
   errorBody: unknown;
