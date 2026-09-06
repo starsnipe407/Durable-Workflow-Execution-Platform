@@ -47,6 +47,8 @@ export interface StepExecution {
   completedAt?: string | null;
   failedAt?: string | null;
   nextRetryAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   stepAttempts?: StepAttempt[];
 }
 

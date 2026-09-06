@@ -231,6 +231,54 @@ describe('Run Detail Components (TDD)', () => {
       fireEvent.click(expandBtn);
       expect(screen.queryByText('Attempt #1')).not.toBeInTheDocument();
     });
+
+    it('falls back to createdAt for chronological sorting and interval window calculations', () => {
+      const pendingSteps: StepExecution[] = [
+        {
+          id: 'step-pending-2',
+          stepKey: 'laterPendingStep',
+          status: 'PENDING',
+          retryLimit: 3,
+          attemptCount: 0,
+          startedAt: null,
+          createdAt: '2026-09-06T12:00:03.000Z',
+        },
+        {
+          id: 'step-pending-1',
+          stepKey: 'earlierPendingStep',
+          status: 'PENDING',
+          retryLimit: 3,
+          attemptCount: 0,
+          startedAt: null,
+          createdAt: '2026-09-06T12:00:01.000Z',
+        },
+      ];
+
+      render(<StepTimeline stepExecutions={pendingSteps} />);
+
+      const stepKeys = screen.getAllByTestId('step-key');
+      expect(stepKeys[0]).toHaveTextContent('earlierPendingStep');
+      expect(stepKeys[1]).toHaveTextContent('laterPendingStep');
+    });
+
+    it('uses nullish coalescing for attemptCount and displays 0 attempts when attemptCount is 0', () => {
+      const stepWithZeroAttempts: StepExecution[] = [
+        {
+          id: 'step-pending',
+          stepKey: 'notYetStartedStep',
+          status: 'PENDING',
+          retryLimit: 3,
+          attemptCount: 0,
+          startedAt: null,
+          createdAt: '2026-09-06T12:00:00.000Z',
+        },
+      ];
+
+      render(<StepTimeline stepExecutions={stepWithZeroAttempts} />);
+
+      expect(screen.getByText('0 attempts')).toBeInTheDocument();
+      expect(screen.queryByText('1 attempt')).not.toBeInTheDocument();
+    });
   });
 
   describe('RunActions', () => {

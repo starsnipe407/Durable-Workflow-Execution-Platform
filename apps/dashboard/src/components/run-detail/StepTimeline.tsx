@@ -35,8 +35,10 @@ export function StepTimeline({ stepExecutions }: StepTimelineProps) {
   // Sort steps chronologically
   const sortedSteps = useMemo(() => {
     return [...(stepExecutions || [])].sort((a, b) => {
-      const aTime = a.startedAt ? new Date(a.startedAt).getTime() : 0;
-      const bTime = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+      const aStart = a.startedAt || a.createdAt;
+      const bStart = b.startedAt || b.createdAt;
+      const aTime = aStart ? new Date(aStart).getTime() : 0;
+      const bTime = bStart ? new Date(bStart).getTime() : 0;
       return aTime - bTime;
     });
   }, [stepExecutions]);
@@ -45,7 +47,8 @@ export function StepTimeline({ stepExecutions }: StepTimelineProps) {
   const concurrentStepIds = useMemo(() => {
     const concurrentIds = new Set<string>();
     const windows = sortedSteps.map((step) => {
-      const start = step.startedAt ? new Date(step.startedAt).getTime() : 0;
+      const startTimeStr = step.startedAt || step.createdAt;
+      const start = startTimeStr ? new Date(startTimeStr).getTime() : 0;
       let end = start;
       if (step.completedAt) {
         end = new Date(step.completedAt).getTime();
@@ -85,7 +88,7 @@ export function StepTimeline({ stepExecutions }: StepTimelineProps) {
       {sortedSteps.map((step, idx) => {
         const isExpanded = !!expandedSteps[step.id];
         const isConcurrent = concurrentStepIds.has(step.id);
-        const attemptCount = step.attemptCount || step.stepAttempts?.length || 1;
+        const attemptCount = step.attemptCount ?? step.stepAttempts?.length ?? 0;
         const duration = formatDuration(step.startedAt, step.completedAt, step.failedAt);
 
         return (
@@ -117,7 +120,7 @@ export function StepTimeline({ stepExecutions }: StepTimelineProps) {
 
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-700 border border-neutral-200">
-                    {attemptCount} {attemptCount === 1 ? 'attempt' : 'attempts'}
+                    {attemptCount === 0 ? '0 attempts' : `${attemptCount} ${attemptCount === 1 ? 'attempt' : 'attempts'}`}
                   </span>
 
                   <button
