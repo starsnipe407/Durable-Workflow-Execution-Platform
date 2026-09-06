@@ -91,6 +91,26 @@ export class WorkflowClient {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEvent: { id?: string; event?: string; data?: string } = {};
+
+        const processLine = function* (line: string): Generator<WorkflowExecutionEvent> {
+          const trimmed = line.trim();
+          if (trimmed === '') {
+            if (currentEvent.data !== undefined) {
+              try {
+                yield JSON.parse(currentEvent.data) as WorkflowExecutionEvent;
+              } catch {}
+            }
+            currentEvent = {};
+          } else if (line.startsWith('id:')) {
+            currentEvent.id = line.slice(3).trim();
+          } else if (line.startsWith('event:')) {
+            currentEvent.event = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            const dataVal = line.slice(5).trim();
+            currentEvent.data = currentEvent.data ? `${currentEvent.data}\n${dataVal}` : dataVal;
+          }
+        };
 
         try {
           while (true) {
@@ -101,46 +121,30 @@ export class WorkflowClient {
             const lines = buffer.split('\n');
             buffer = lines.pop() ?? '';
 
-            let currentEvent: { id?: string; event?: string; data?: string } = {};
             for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed === '') {
-                if (currentEvent.data !== undefined) {
-                  try {
-                    yield JSON.parse(currentEvent.data) as WorkflowExecutionEvent;
-                  } catch {}
-                }
-                currentEvent = {};
-              } else if (line.startsWith('id:')) {
-                currentEvent.id = line.slice(3).trim();
-              } else if (line.startsWith('event:')) {
-                currentEvent.event = line.slice(6).trim();
-              } else if (line.startsWith('data:')) {
-                const dataVal = line.slice(5).trim();
-                currentEvent.data = currentEvent.data ? `${currentEvent.data}\n${dataVal}` : dataVal;
+              for (const ev of processLine(line)) {
+                yield ev;
               }
             }
           }
+
           if (buffer.trim()) {
-            const lines = buffer.split('\n');
-            let currentEvent: { id?: string; event?: string; data?: string } = {};
-            for (const line of lines) {
-              if (line.startsWith('id:')) {
-                currentEvent.id = line.slice(3).trim();
-              } else if (line.startsWith('event:')) {
-                currentEvent.event = line.slice(6).trim();
-              } else if (line.startsWith('data:')) {
-                const dataVal = line.slice(5).trim();
-                currentEvent.data = currentEvent.data ? `${currentEvent.data}\n${dataVal}` : dataVal;
+            for (const line of buffer.split('\n')) {
+              for (const ev of processLine(line)) {
+                yield ev;
               }
             }
-            if (currentEvent.data !== undefined) {
-              try {
-                yield JSON.parse(currentEvent.data) as WorkflowExecutionEvent;
-              } catch {}
-            }
+          }
+          if (currentEvent.data !== undefined) {
+            try {
+              yield JSON.parse(currentEvent.data) as WorkflowExecutionEvent;
+            } catch {}
+            currentEvent = {};
           }
         } finally {
+          try {
+            await reader.cancel();
+          } catch {}
           reader.releaseLock();
         }
       },

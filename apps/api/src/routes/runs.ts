@@ -422,9 +422,14 @@ export function runsRoutes(
 
     if (options.multiplexer) {
       try {
-        unsubscribe = await options.multiplexer.subscribe(runId, () => {
+        const unsub = await options.multiplexer.subscribe(runId, () => {
           fetchAndFlush().catch(() => {});
         });
+        if (closed) {
+          await unsub().catch(() => {});
+        } else {
+          unsubscribe = unsub;
+        }
       } catch {
         // subscription error handling
       }
@@ -432,9 +437,13 @@ export function runsRoutes(
 
     await fetchAndFlush();
 
+    if (reply.raw.writableEnded || closed) {
+      return;
+    }
+
     return new Promise<void>((resolve) => {
-      reply.raw.on('finish', resolve);
-      request.raw.on('close', resolve);
+      reply.raw.once('finish', resolve);
+      request.raw.once('close', resolve);
     });
   };
 

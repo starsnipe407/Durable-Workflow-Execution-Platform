@@ -8,6 +8,7 @@ export class RunEventsMultiplexer {
 
   constructor(redis: Redis) {
     this.subRedis = redis.duplicate();
+    this.subRedis.on('error', () => {});
     const prefix = 'workflow:events:';
 
     this.subRedis.on('message', (channel: string) => {

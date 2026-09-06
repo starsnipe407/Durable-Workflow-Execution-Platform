@@ -126,4 +126,69 @@ describe('WorkflowClient E2E', () => {
       expect(e.statusCode).toBe(401);
     }
   });
+
+  it('client.runs.streamEvents() correctly streams SSE chunks split across packet boundaries', async () => {
+    const chunk1 = new TextEncoder().encode('id: 1\nevent: WORKFLOW_STARTED\ndata: {"id":"1","eventType":"WORKFLOW_ST');
+    const chunk2 = new TextEncoder().encode('ARTED","workflowRunId":"run_1"}\n\nid: 2\nevent: STEP_COMPLETED\ndata: {"id":"2","eventType":"STEP_COMPLETED","workflowRunId":"run_1"}\n\n');
+
+    let streamCancelled = false;
+    const mockStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(chunk1);
+        controller.enqueue(chunk2);
+        controller.close();
+      },
+      cancel() {
+        streamCancelled = true;
+      }
+    });
+
+    const mockFetch: typeof fetch = async () => {
+      return new Response(mockStream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    };
+
+    const client = createWorkflowClient({ baseUrl: 'http://localhost:3000', apiKey: 'test', fetch: mockFetch });
+    const events = [];
+    for await (const ev of client.runs.streamEvents('run_1')) {
+      events.push(ev);
+    }
+
+    expect(events).toHaveLength(2);
+    expect(events[0].id).toBe('1');
+    expect(events[0].eventType).toBe('WORKFLOW_STARTED');
+    expect(events[1].id).toBe('2');
+    expect(events[1].eventType).toBe('STEP_COMPLETED');
+  });
+
+  it('client.runs.streamEvents() cancels stream reader on early consumer break', async () => {
+    let streamCancelled = false;
+    const mockStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('id: 1\nevent: WORKFLOW_STARTED\ndata: {"id":"1"}\n\nid: 2\nevent: WORKFLOW_COMPLETED\ndata: {"id":"2"}\n\n'));
+      },
+      cancel() {
+        streamCancelled = true;
+      }
+    });
+
+    const mockFetch: typeof fetch = async () => {
+      return new Response(mockStream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    };
+
+    const client = createWorkflowClient({ baseUrl: 'http://localhost:3000', apiKey: 'test', fetch: mockFetch });
+    for await (const ev of client.runs.streamEvents('run_1')) {
+      if (ev.id === '1') {
+        break;
+      }
+    }
+
+    expect(streamCancelled).toBe(true);
+  });
 });
+
