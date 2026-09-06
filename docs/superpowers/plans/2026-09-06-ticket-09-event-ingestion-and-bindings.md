@@ -45,16 +45,16 @@
 - Modify: `apps/api/src/index.ts`
 - Test: `apps/api/test/events-ingestion.test.ts`
 
-- [ ] **Step 1: Write failing tests for `POST /events` (RED)**
+- [x] **Step 1: Write failing tests for `POST /events` (RED)**
   - Test validation failure (missing `id` or `name`) returns 400.
   - Test event ingestion with no matching bindings inserts `ingested_events` and returns 201 with 0 runs created.
   - Test event ingestion with matching `workflow_event_bindings` atomically creates `workflow_runs` (in `PENDING` status with `triggerType: EVENT`), records `WORKFLOW_CREATED` events, enqueues BullMQ jobs, and returns 201 with runs array.
   - Test duplicate event with identical `id` returns HTTP 200 without creating duplicate events, runs, or BullMQ jobs.
   - Test concurrent requests with identical event ID (`Promise.all`) both succeed, creating exactly 1 event and 1 set of runs.
-- [ ] **Step 2: Run test to verify it fails (RED)**
-- [ ] **Step 3: Implement `POST /events` handler in `apps/api/src/routes/events.ts` and mount in `apps/api/src/app.ts`**
-- [ ] **Step 4: Run test to verify it passes (GREEN)**
-- [ ] **Step 5: Run build and commit**
+- [x] **Step 2: Run test to verify it fails (RED)**
+- [x] **Step 3: Implement `POST /events` handler in `apps/api/src/routes/events.ts` and mount in `apps/api/src/app.ts`**
+- [x] **Step 4: Run test to verify it passes (GREEN)**
+- [x] **Step 5: Run build and commit**
 
 ---
 
@@ -65,14 +65,14 @@
 - Modify: `packages/client/src/client.ts`
 - Test: `packages/client/test/events.test.ts`
 
-- [ ] **Step 1: Write failing tests for `client.sendEvent()` against Fastify test server (RED)**
+- [x] **Step 1: Write failing tests for `client.sendEvent()` against Fastify test server (RED)**
   - Test `client.sendEvent({ id, name, data })` ingests event and returns response.
   - Test `client.sendEvent` duplicate returns HTTP 200 status.
   - Test client error handling when sending invalid event throws `WorkflowClientError`.
-- [ ] **Step 2: Run test to verify it fails (RED)**
-- [ ] **Step 3: Implement `sendEvent` method and types in `@durable/client`**
-- [ ] **Step 4: Run test to verify it passes (GREEN)**
-- [ ] **Step 5: Run build and commit**
+- [x] **Step 2: Run test to verify it fails (RED)**
+- [x] **Step 3: Implement `sendEvent` method and types in `@durable/client`**
+- [x] **Step 4: Run test to verify it passes (GREEN)**
+- [x] **Step 5: Run build and commit**
 
 ---
 
@@ -81,7 +81,7 @@
 **Files:**
 - Modify: `.scratch/durable-engine/issues/09-event-ingestion-and-bindings.md`
 
-- [ ] **Step 1: Run full monorepo test suite across all workspace packages**
-- [ ] **Step 2: Run full monorepo build (`pnpm build`)**
-- [ ] **Step 3: Update Ticket 09 issue file with completed status, checklist, and Producer-to-Consumer verification**
-- [ ] **Step 4: Stage and commit**
+- [x] **Step 1: Run full monorepo test suite across all workspace packages**
+- [x] **Step 2: Run full monorepo build (`pnpm build`)**
+- [x] **Step 3: Update Ticket 09 issue file with completed status, checklist, and Producer-to-Consumer verification**
+- [x] **Step 4: Stage and commit**
