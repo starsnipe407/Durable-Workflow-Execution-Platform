@@ -175,6 +175,55 @@ importers:
         specifier: ^3.0.7
         version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(tsx@4.23.13)
 
+  benchmarks:
+    dependencies:
+      '@durable/client':
+        specifier: workspace:*
+        version: link:../packages/client
+      '@durable/database':
+        specifier: workspace:*
+        version: link:../packages/database
+      '@durable/reconciler':
+        specifier: workspace:*
+        version: link:../apps/reconciler
+      '@durable/shared':
+        specifier: workspace:*
+        version: link:../packages/shared
+      '@durable/worker':
+        specifier: workspace:*
+        version: link:../apps/worker
+      '@durable/workflow-sdk':
+        specifier: workspace:*
+        version: link:../packages/workflow-sdk
+      '@example/order-processing':
+        specifier: workspace:*
+        version: link:../examples/order-processing
+      bullmq:
+        specifier: ^6.3.4
+        version: 6.3.4(ioredis@6.0.0)
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0
+      zod:
+        specifier: ^3.0.0
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.9
+        version: 22.20.1
+      dotenv-cli:
+        specifier: ^8.0.0
+        version: 8.0.0
+      tsx:
+        specifier: ^4.19.3
+        version: 4.23.13
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(tsx@4.23.13)
+
   examples/order-processing:
     dependencies:
       '@durable/client':

@@ -1,0 +1,31 @@
+{
+  "name": "@durable/benchmarks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "test": "dotenv -e ../.env.test -- vitest run"
+  },
+  "dependencies": {
+    "@durable/client": "workspace:*",
+    "@durable/database": "workspace:*",
+    "@durable/reconciler": "workspace:*",
+    "@durable/shared": "workspace:*",
+    "@durable/worker": "workspace:*",
+    "@durable/workflow-sdk": "workspace:*",
+    "@example/order-processing": "workspace:*",
+    "bullmq": "^6.3.4",
+    "ioredis": "^6.0.0",
+    "zod": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "dotenv-cli": "^8.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}
