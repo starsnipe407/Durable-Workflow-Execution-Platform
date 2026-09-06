@@ -5,8 +5,14 @@ export interface BackoffOptions {
   jitter?: boolean;
 }
 
+export interface StepRetryOptions {
+  maxAttempts?: number;
+  backoff?: "exponential" | BackoffOptions;
+}
+
 export interface StepOptions {
   retries?: number;
+  retry?: StepRetryOptions;
   backoff?: BackoffOptions;
   timeoutMs?: number;
   idempotencyKey?: string;
@@ -21,6 +27,7 @@ export type StepHandler<T> = (ctx: StepHandlerContext) => Promise<T>;
 export interface StepContext {
   run<T>(key: string, handler: StepHandler<T>): Promise<T>;
   run<T>(key: string, options: StepOptions, handler: StepHandler<T>): Promise<T>;
+  run<T>(key: string, handler: StepHandler<T>, options: StepOptions): Promise<T>;
 }
 
 export interface WorkflowContext<TInput = unknown> {

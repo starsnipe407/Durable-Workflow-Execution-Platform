@@ -40,18 +40,29 @@ export class StepContextImpl implements StepContext {
 
   run<T>(key: string, handler: StepHandler<T>): Promise<T>;
   run<T>(key: string, options: StepOptions, handler: StepHandler<T>): Promise<T>;
+  run<T>(key: string, handler: StepHandler<T>, options: StepOptions): Promise<T>;
   async run<T>(
     key: string,
     optionsOrHandler: StepOptions | StepHandler<T>,
-    maybeHandler?: StepHandler<T>
+    maybeHandlerOrOptions?: StepHandler<T> | StepOptions
   ): Promise<T> {
     if (this.seenKeys.has(key)) {
       throw new DuplicateStepKeyError(key);
     }
     this.seenKeys.add(key);
 
-    const handler = typeof optionsOrHandler === "function" ? optionsOrHandler : maybeHandler!;
-    const options = typeof optionsOrHandler === "object" ? optionsOrHandler : {};
+    let handler: StepHandler<T>;
+    let options: StepOptions;
+
+    if (typeof optionsOrHandler === "function") {
+      handler = optionsOrHandler;
+      options = (typeof maybeHandlerOrOptions === "object" && maybeHandlerOrOptions !== null
+        ? maybeHandlerOrOptions
+        : {}) as StepOptions;
+    } else {
+      options = optionsOrHandler ?? {};
+      handler = maybeHandlerOrOptions as StepHandler<T>;
+    }
 
     const promise = this.executeStep<T>(key, options, handler);
     this.inFlightPromises.add(promise);
@@ -87,7 +98,14 @@ export class StepContextImpl implements StepContext {
 
     await this.triggerEvent();
 
-    const maxRetries = options.retries ?? 3; // 1 initial + 3 retries
+    const maxRetries =
+      options.retries ??
+      (options.retry?.maxAttempts !== undefined ? Math.max(0, options.retry.maxAttempts - 1) : undefined) ??
+      3; // 1 initial + 3 retries by default
+    const backoffOptions =
+      typeof options.retry?.backoff === "string" && options.retry.backoff === "exponential"
+        ? { type: "exponential" as const }
+        : (options.retry?.backoff ?? options.backoff);
     const timeoutMs = options.timeoutMs;
 
     let output: T;
@@ -110,7 +128,7 @@ export class StepContextImpl implements StepContext {
       let nextRetryAt: Date | null = null;
 
       if (!isTerminalFailure) {
-        retryDelayMs = calculateBackoffDelay(claim.attemptNumber, options.backoff);
+        retryDelayMs = calculateBackoffDelay(claim.attemptNumber, backoffOptions);
         nextRetryAt = new Date(Date.now() + retryDelayMs);
       }
 
