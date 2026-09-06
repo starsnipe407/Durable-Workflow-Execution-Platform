@@ -37,7 +37,7 @@ describe('API Rate Limiter & Fail-Closed Guard', () => {
         refillRate: 2, // 2 tokens/second
         defaultCost: 1,
       },
-    } as any);
+    });
     await app.ready();
   });
 
