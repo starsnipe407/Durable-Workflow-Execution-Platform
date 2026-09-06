@@ -66,6 +66,7 @@ export interface WorkflowRun {
   startedAt?: string | null;
   completedAt?: string | null;
   failedAt?: string | null;
+  cancelRequestedAt?: string | null;
   cancelledAt?: string | null;
   createdAt: string;
   updatedAt: string;

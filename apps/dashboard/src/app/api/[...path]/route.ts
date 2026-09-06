@@ -4,10 +4,12 @@ type RouteContext = {
   params: { path: string[] } | Promise<{ path: string[] }>;
 };
 
+const HOP_BY_HOP = new Set(['host', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'content-length']);
+
 async function handleProxy(request: NextRequest | Request, context: RouteContext): Promise<Response> {
   const resolvedParams = await Promise.resolve(context.params);
   const pathSegments = resolvedParams?.path ?? [];
-  const subpath = pathSegments.join('/');
+  const subpath = pathSegments.map(encodeURIComponent).join('/');
 
   const reqUrl = new URL(request.url);
   const baseUrl = process.env.DURABLE_API_URL || 'http://localhost:3000';
@@ -15,8 +17,7 @@ async function handleProxy(request: NextRequest | Request, context: RouteContext
 
   const forwardHeaders = new Headers();
   for (const [key, value] of request.headers.entries()) {
-    const lower = key.toLowerCase();
-    if (lower !== 'host') {
+    if (!HOP_BY_HOP.has(key.toLowerCase())) {
       forwardHeaders.set(key, value);
     }
   }
@@ -31,11 +32,19 @@ async function handleProxy(request: NextRequest | Request, context: RouteContext
     }
   }
 
-  const upstreamRes = await fetch(targetUrl.toString(), {
-    method: request.method,
-    headers: forwardHeaders,
-    body,
-  });
+  let upstreamRes: Response;
+  try {
+    upstreamRes = await fetch(targetUrl.toString(), {
+      method: request.method,
+      headers: forwardHeaders,
+      body,
+    });
+  } catch {
+    return Response.json(
+      { error: 'Bad Gateway', message: 'Unable to connect to upstream API' },
+      { status: 502 }
+    );
+  }
 
   const contentType = upstreamRes.headers.get('content-type') || '';
   const isSSE = contentType.includes('text/event-stream');
@@ -62,22 +71,9 @@ async function handleProxy(request: NextRequest | Request, context: RouteContext
   });
 }
 
-export async function GET(request: NextRequest | Request, context: RouteContext) {
-  return handleProxy(request, context);
-}
+export const GET = handleProxy;
+export const POST = handleProxy;
+export const PUT = handleProxy;
+export const DELETE = handleProxy;
+export const PATCH = handleProxy;
 
-export async function POST(request: NextRequest | Request, context: RouteContext) {
-  return handleProxy(request, context);
-}
-
-export async function PUT(request: NextRequest | Request, context: RouteContext) {
-  return handleProxy(request, context);
-}
-
-export async function DELETE(request: NextRequest | Request, context: RouteContext) {
-  return handleProxy(request, context);
-}
-
-export async function PATCH(request: NextRequest | Request, context: RouteContext) {
-  return handleProxy(request, context);
-}

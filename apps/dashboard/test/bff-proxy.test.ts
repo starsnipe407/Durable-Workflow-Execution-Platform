@@ -209,4 +209,62 @@ describe('BFF Catch-All Proxy Route (/api/[...path])', () => {
     expect(patchRes.status).toBe(200);
     expect(lastServerRequest.method).toBe('PATCH');
   });
+
+  it('6. returns 502 Bad Gateway when upstream is down or unreachable', async () => {
+    const originalUrl = process.env.DURABLE_API_URL;
+    try {
+      process.env.DURABLE_API_URL = 'http://127.0.0.1:1';
+      const req = new Request('http://localhost:3001/api/runs', { method: 'GET' });
+      const res = await GET(req as any, { params: Promise.resolve({ path: ['runs'] }) });
+
+      expect(res.status).toBe(502);
+      const data = await res.json();
+      expect(data).toEqual({
+        error: 'Bad Gateway',
+        message: 'Unable to connect to upstream API',
+      });
+    } finally {
+      process.env.DURABLE_API_URL = originalUrl;
+    }
+  });
+
+  it('7. securely overwrites client-supplied x-api-key with DURABLE_API_KEY', async () => {
+    const req = new Request('http://localhost:3001/api/runs', {
+      method: 'GET',
+      headers: {
+        'x-api-key': 'evil-key',
+      },
+    });
+
+    const res = await GET(req as any, { params: Promise.resolve({ path: ['runs'] }) });
+    expect(res.status).toBe(200);
+    expect(lastServerRequest.headers?.['x-api-key']).toBe('test-secret-key-123');
+  });
+
+  it('8. filters hop-by-hop headers, content-length, and encodes path segments', async () => {
+    const req = new Request('http://localhost:3001/api/runs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'content-length': '18',
+        'keep-alive': 'timeout=5',
+        'transfer-encoding': 'chunked',
+        'upgrade': 'websocket',
+        'x-custom-header': 'custom-val',
+      },
+      body: JSON.stringify({ ok: true }),
+    });
+
+    const res = await POST(req as any, {
+      params: Promise.resolve({ path: ['runs', 'user@domain.com'] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastServerRequest.url).toBe('/runs/user%40domain.com');
+    expect(lastServerRequest.headers?.['keep-alive']).toBeUndefined();
+    expect(lastServerRequest.headers?.['transfer-encoding']).toBeUndefined();
+    expect(lastServerRequest.headers?.['upgrade']).toBeUndefined();
+    expect(lastServerRequest.headers?.['x-custom-header']).toBe('custom-val');
+  });
 });
+
