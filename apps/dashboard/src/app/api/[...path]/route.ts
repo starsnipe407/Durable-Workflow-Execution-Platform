@@ -71,6 +71,8 @@ async function handleProxy(request: NextRequest | Request, context: RouteContext
   });
 }
 
+export const dynamic = 'force-dynamic';
+
 export const GET = handleProxy;
 export const POST = handleProxy;
 export const PUT = handleProxy;
