@@ -11,6 +11,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { MetricCard } from './MetricCard';
+import { StatusBadge } from '@/components/runs/StatusBadge';
 import type { MetricsResponse, WorkflowRun } from '@/lib/types';
 
 function formatDuration(
@@ -32,28 +33,6 @@ function formatDuration(
   return `${mins}m ${remSec}s`;
 }
 
-function getStatusBadge(status: string) {
-  let style = 'bg-neutral-100 text-neutral-600 border-neutral-200';
-  if (status === 'COMPLETED') {
-    style = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  } else if (status === 'RUNNING') {
-    style = 'bg-blue-50 text-blue-700 border-blue-200';
-  } else if (status === 'FAILED') {
-    style = 'bg-rose-50 text-rose-700 border-rose-200';
-  } else if (status === 'PENDING') {
-    style = 'bg-amber-50 text-amber-700 border-amber-200';
-  } else if (status === 'CANCEL_REQUESTED') {
-    style = 'bg-orange-50 text-orange-700 border-orange-200';
-  }
-
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${style}`}
-    >
-      {status}
-    </span>
-  );
-}
 
 export function DashboardOverview() {
   const {
@@ -245,7 +224,7 @@ export function DashboardOverview() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {getStatusBadge(run.status)}
+                      <StatusBadge status={run.status} />
                     </td>
                     <td className="px-6 py-4 text-xs text-neutral-500">
                       {run.startedAt
