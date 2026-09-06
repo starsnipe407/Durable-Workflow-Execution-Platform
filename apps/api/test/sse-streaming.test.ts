@@ -4,7 +4,7 @@ import { PrismaClient } from '@durable/database';
 import { Redis } from 'ioredis';
 import { createApp } from '../src/app';
 import { hashApiKey } from '../src/plugins/auth';
-import { createWorkflowClient } from '../../../packages/client/src/index';
+import { createWorkflowClient } from '@durable/client';
 import { defineWorkflow } from '@durable/workflow-sdk';
 import {
   WorkflowRegistry,
@@ -76,7 +76,7 @@ describe('Server-Sent Events (SSE) Streaming & Multiplexer', () => {
       redis,
       queue,
       sseKeepaliveIntervalMs: 50,
-    } as any);
+    });
     const address = await app.listen({ port: 0, host: '127.0.0.1' });
     baseUrl = address;
   });

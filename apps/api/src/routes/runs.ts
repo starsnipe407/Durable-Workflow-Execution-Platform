@@ -301,7 +301,9 @@ export function runsRoutes(
     }
 
     // Read Last-Event-ID header or ?lastEventId query param
-    const rawLastEventId = request.headers['last-event-id'] || (request.query as any)?.lastEventId;
+    const headerLastEventId = request.headers['last-event-id'];
+    const normalizedHeader = Array.isArray(headerLastEventId) ? headerLastEventId[0] : headerLastEventId;
+    const rawLastEventId = normalizedHeader || (request.query as any)?.lastEventId;
     let lastSentId: bigint | undefined;
     if (rawLastEventId && typeof rawLastEventId === 'string' && /^\d+$/.test(rawLastEventId.trim())) {
       lastSentId = BigInt(rawLastEventId.trim());

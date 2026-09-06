@@ -18,6 +18,7 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
+    "@durable/client": "workspace:*",
     "@durable/workflow-sdk": "workspace:*",
     "@types/node": "^20.0.0",
     "dotenv-cli": "^7.4.2",
