@@ -276,10 +276,6 @@ export async function runFencingBenchmark(
       await new Promise((r) => setTimeout(r, 20));
     }
 
-    if (!workerAError) {
-      // Fallback: check if Worker A encountered StaleAttemptError
-      workerAError = 'StaleAttemptError: Step attempt commit failed because attempt is no longer active (fenced out).';
-    }
 
     // 9. Inspect PostgreSQL: Assert Worker B's result is preserved and Worker A's commit was strictly fenced
     const finalRun = await db.workflowRun.findUnique({
@@ -345,6 +341,13 @@ export async function runFencingBenchmark(
     }
     await queue.close().catch(() => {});
     await redis.quit().catch(() => {});
+    if (!options?.tenantId) {
+      await db.stepAttempt.deleteMany({ where: { tenantId } }).catch(() => {});
+      await db.stepExecution.deleteMany({ where: { tenantId } }).catch(() => {});
+      await db.executionEvent.deleteMany({ where: { tenantId } }).catch(() => {});
+      await db.workflowRun.deleteMany({ where: { tenantId } }).catch(() => {});
+      await db.tenant.deleteMany({ where: { id: tenantId } }).catch(() => {});
+    }
     await db.$disconnect().catch(() => {});
   }
 }

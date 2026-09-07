@@ -261,6 +261,20 @@ export async function runRetryBenchmark(
           break;
         }
 
+        const failedRun = await db.workflowRun.findFirst({
+          where: {
+            id: { in: runIds },
+            status: 'FAILED',
+          },
+          select: { id: true, error: true },
+        });
+
+        if (failedRun) {
+          throw new Error(
+            `Workflow run ${failedRun.id} failed in tier ${failureRatePercent}%: ${failedRun.error ?? 'Unknown error'}`
+          );
+        }
+
         await reconciler.reconcileOnce().catch(() => {});
         await new Promise((r) => setTimeout(r, 40));
       }
@@ -327,6 +341,13 @@ export async function runRetryBenchmark(
     }
     await queue.close().catch(() => {});
     await redis.quit().catch(() => {});
+    if (!options?.tenantId) {
+      await db.stepAttempt.deleteMany({ where: { tenantId } }).catch(() => {});
+      await db.stepExecution.deleteMany({ where: { tenantId } }).catch(() => {});
+      await db.executionEvent.deleteMany({ where: { tenantId } }).catch(() => {});
+      await db.workflowRun.deleteMany({ where: { tenantId } }).catch(() => {});
+      await db.tenant.deleteMany({ where: { id: tenantId } }).catch(() => {});
+    }
     await db.$disconnect().catch(() => {});
   }
 }
