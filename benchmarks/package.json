@@ -7,7 +7,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc --build",
-    "test": "dotenv -e ../.env.test -- vitest run",
+    "test": "dotenv -e ../.env.test -- vitest run --fileParallelism=false",
     "bench:throughput": "tsx src/bench-throughput.ts",
     "bench:saturation": "tsx src/bench-saturation.ts",
     "bench:chaos": "tsx src/bench-chaos.ts",

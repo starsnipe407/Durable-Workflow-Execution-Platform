@@ -20,7 +20,7 @@ import {
 import { WorkflowReconciler } from '@durable/reconciler';
 import { collectSystemMetadata } from './sysinfo.js';
 import { formatMarkdownReport, saveBenchmarkArtifact } from './reporter.js';
-import type { ChaosBenchmarkResult, BenchmarkReport } from './types.js';
+import type { ChaosBenchmarkResult, MultiTtlChaosResult, BenchmarkReport } from './types.js';
 
 // Auto-load .env.test if environment variables are not already set
 if (!process.env.DATABASE_URL || !process.env.REDIS_URL) {
@@ -265,6 +265,7 @@ export async function runChaosBenchmark(
       batchSize: 10,
     });
     await reconciler.reconcileOnce();
+    const timeToAbandonedMs = Number((performance.now() - killTimestamp).toFixed(2));
 
     // 7. Spawn replacement worker replica to resume workflow
     worker2 = fork(runnerPath, [], {
@@ -337,6 +338,7 @@ export async function runChaosBenchmark(
       killSignal: 'SIGKILL',
       leaseTtlMs,
       recoveryLatencyMs,
+      timeToAbandonedMs,
       workflowRunId: run.id,
       duplicateStepCalls,
       status: 'COMPLETED',
@@ -351,6 +353,253 @@ export async function runChaosBenchmark(
     if (reconciler) {
       await reconciler.stop().catch(() => {});
     }
+    await queue.close().catch(() => {});
+    await redis.quit().catch(() => {});
+    await db.$disconnect().catch(() => {});
+  }
+}
+
+export interface MultiTtlChaosOptions {
+  ttlsMs?: number[];
+  repetitionsPerTtl?: number;
+  tenantId?: string;
+  databaseUrl?: string;
+  dbUrl?: string;
+  redisUrl?: string;
+  queueName?: string;
+  timeoutMs?: number;
+  workerRunnerPath?: string;
+}
+
+export async function runMultiTtlChaosBenchmark(
+  options?: MultiTtlChaosOptions
+): Promise<MultiTtlChaosResult> {
+  const ttlsMs = options?.ttlsMs ?? [2000, 5000, 10000, 30000];
+  const repetitions = options?.repetitionsPerTtl ?? 1;
+  const timeoutMs = options?.timeoutMs ?? 30000;
+  const databaseUrl =
+    options?.databaseUrl ||
+    options?.dbUrl ||
+    process.env.DATABASE_URL ||
+    'postgresql://postgres:postgres@localhost:5433/durable_workflow_test?schema=public';
+  const redisUrl =
+    options?.redisUrl ||
+    process.env.REDIS_URL ||
+    'redis://localhost:6380';
+  const tenantId = options?.tenantId || crypto.randomUUID();
+  const queueName =
+    options?.queueName || `bench_chaos_${crypto.randomUUID().slice(0, 8)}`;
+
+  const defaultDir = path.dirname(fileURLToPath(import.meta.url));
+  const defaultTsPath = path.resolve(defaultDir, 'worker-runner.ts');
+  const defaultJsPath = path.resolve(defaultDir, 'worker-runner.js');
+  const defaultRunnerPath = fs.existsSync(defaultTsPath) ? defaultTsPath : defaultJsPath;
+  const runnerPath = options?.workerRunnerPath || defaultRunnerPath;
+  const execArgv = resolveExecArgv(runnerPath);
+
+  const db: PrismaClient = createPrismaClient(databaseUrl);
+  await db.$connect();
+
+  await db.tenant.upsert({
+    where: { id: tenantId },
+    update: {},
+    create: { id: tenantId, name: `Multi-TTL Chaos Tenant ${tenantId}` },
+  });
+
+  const queue: Queue<WorkflowRunJobData> = createWorkflowQueue(redisUrl, queueName);
+  const redis = new Redis(redisUrl, { maxRetriesPerRequest: null });
+  const results: ChaosBenchmarkResult[] = [];
+
+  try {
+    for (const leaseTtlMs of ttlsMs) {
+      for (let rep = 0; rep < repetitions; rep++) {
+        let worker1: ChildProcess | null = null;
+        let worker2: ChildProcess | null = null;
+        let reconciler: WorkflowReconciler | null = null;
+        const chaosRunId = crypto.randomUUID();
+
+        try {
+          // 1. Spawn victim worker child process configured with LEASE_TTL_MS
+          worker1 = fork(runnerPath, [], {
+            env: {
+              ...process.env,
+              DATABASE_URL: databaseUrl,
+              REDIS_URL: redisUrl,
+              TENANT_ID: tenantId,
+              CONCURRENCY: '1',
+              QUEUE_NAME: queueName,
+              WORKER_ID: `chaos-victim-${leaseTtlMs}-${rep}-${crypto.randomUUID().slice(0, 6)}`,
+              LEASE_TTL_MS: leaseTtlMs.toString(),
+            },
+            execArgv,
+            stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+          });
+
+          const victimPid = worker1.pid!;
+          await waitForReady(worker1);
+
+          // 2. Enqueue workflow run
+          const run = await createWorkflowRun(db, {
+            tenantId,
+            workflowName: 'chaos-workflow',
+            workflowVersion: '1.0.0',
+            input: {
+              chaosRunId,
+              delayMs: 15000,
+            },
+          });
+
+          await enqueueWorkflowRun(
+            queue,
+            {
+              tenantId,
+              runId: run.id,
+              workflowName: 'chaos-workflow',
+              workflowVersion: '1.0.0',
+            },
+            { jobId: `run_${run.id}` }
+          );
+
+          // 3. Detect step 2 is active in PostgreSQL
+          const detectStart = performance.now();
+          let step2Detected = false;
+
+          while (performance.now() - detectStart < 15000) {
+            const step2 = await db.stepExecution.findFirst({
+              where: {
+                workflowRunId: run.id,
+                stepKey: 'step-2-process',
+                status: 'RUNNING',
+              },
+            });
+
+            if (step2) {
+              step2Detected = true;
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 20));
+          }
+
+          if (!step2Detected) {
+            throw new Error('Timed out waiting for step-2-process to enter RUNNING state');
+          }
+
+          // 4. Abruptly terminate victim child process with real SIGKILL mid-step
+          process.kill(victimPid, 'SIGKILL');
+          const killTimestamp = performance.now();
+
+          // Signal in Redis so resuming worker knows it's the post-kill attempt and completes step 2 immediately
+          await redis.set(`chaos:killed:${chaosRunId}`, '1');
+
+          // 5. Wait for the lease duration to expire
+          const waitLeaseMs = leaseTtlMs + 200;
+          await new Promise((r) => setTimeout(r, waitLeaseMs));
+
+          // 6. Trigger Reconciler to reconcile expired lease
+          reconciler = new WorkflowReconciler({
+            db,
+            connectionOrUrl: redisUrl,
+            queueName,
+            tenantId,
+            batchSize: 10,
+          });
+          await reconciler.reconcileOnce();
+          const timeToAbandonedMs = Number((performance.now() - killTimestamp).toFixed(2));
+
+          // 7. Spawn replacement worker replica to resume workflow
+          worker2 = fork(runnerPath, [], {
+            env: {
+              ...process.env,
+              DATABASE_URL: databaseUrl,
+              REDIS_URL: redisUrl,
+              TENANT_ID: tenantId,
+              CONCURRENCY: '1',
+              QUEUE_NAME: queueName,
+              WORKER_ID: `chaos-replacement-${leaseTtlMs}-${rep}-${crypto.randomUUID().slice(0, 6)}`,
+              LEASE_TTL_MS: leaseTtlMs.toString(),
+            },
+            execArgv,
+            stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+          });
+
+          await waitForReady(worker2);
+
+          // Additional tick to ensure due retries are re-enqueued
+          await reconciler.reconcileOnce();
+
+          // 8. Await completion of workflow run in PostgreSQL
+          const awaitStart = performance.now();
+          let finalStatus: string | null = null;
+
+          while (performance.now() - awaitStart < timeoutMs) {
+            const currentRun = await db.workflowRun.findUnique({
+              where: { id: run.id },
+              select: { status: true },
+            });
+
+            if (currentRun?.status === 'COMPLETED') {
+              finalStatus = 'COMPLETED';
+              break;
+            }
+
+            if (currentRun?.status === 'FAILED' || currentRun?.status === 'CANCELLED') {
+              throw new Error(`Workflow run ended with unexpected status: ${currentRun.status}`);
+            }
+
+            await new Promise((r) => setTimeout(r, 50));
+          }
+
+          if (finalStatus !== 'COMPLETED') {
+            throw new Error(`Workflow run ${run.id} did not complete within ${timeoutMs}ms`);
+          }
+
+          const recoveryLatencyMs = Number((performance.now() - killTimestamp).toFixed(2));
+
+          // 9. Assert duplicateStepCalls === 0 for memoized step 1
+          const memoizedStep = await db.stepExecution.findFirst({
+            where: {
+              workflowRunId: run.id,
+              stepKey: 'step-1-init',
+            },
+            include: {
+              stepAttempts: true,
+            },
+          });
+
+          const duplicateStepCalls = (memoizedStep?.stepAttempts.length ?? 1) - 1;
+
+          results.push({
+            scenario: 'WORKER_SIGKILL_RECOVERY',
+            workerPid: victimPid,
+            killSignal: 'SIGKILL',
+            leaseTtlMs,
+            recoveryLatencyMs,
+            timeToAbandonedMs,
+            workflowRunId: run.id,
+            duplicateStepCalls,
+            status: 'COMPLETED',
+          });
+        } finally {
+          await redis.del(`chaos:killed:${chaosRunId}`).catch(() => {});
+          if (worker1) {
+            await stopProcess(worker1);
+          }
+          if (worker2) {
+            await stopProcess(worker2);
+          }
+          if (reconciler) {
+            await reconciler.stop().catch(() => {});
+          }
+        }
+      }
+    }
+
+    return {
+      scenario: 'MULTI_TTL_CHAOS_SWEEP',
+      results,
+      status: 'PASSED',
+    };
+  } finally {
     await queue.close().catch(() => {});
     await redis.quit().catch(() => {});
     await db.$disconnect().catch(() => {});
