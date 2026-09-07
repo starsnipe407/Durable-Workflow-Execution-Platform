@@ -1,11 +1,14 @@
 # Durable Workflow Execution Platform
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=flat&logo=github)](https://github.com/starsnipe407/Durable-Workflow-Execution-Platform)
 [![CI](https://github.com/starsnipe407/Durable-Workflow-Execution-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/starsnipe407/Durable-Workflow-Execution-Platform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](https://www.typescriptlang.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D.svg)](https://redis.io/)
 [![Turborepo](https://img.shields.io/badge/Turborepo-2.4-EF4444.svg)](https://turbo.build/)
+
+> **GitHub Repository**: [https://github.com/starsnipe407/Durable-Workflow-Execution-Platform](https://github.com/starsnipe407/Durable-Workflow-Execution-Platform)
 
 A production-grade, clean-room TypeScript **Durable Workflow Execution Platform** designed for fault-tolerant orchestration, deterministic replay, and crash resilience. 
 
@@ -81,7 +84,7 @@ Steps wrapped in `Promise.all` execute concurrently with isolated database attem
 
 ## 📊 Standardized Benchmark Suite
 
-Full reproducible benchmark reports are stored in [`benchmarks/results/`](file:///C:/Users/AZTREK/AI-ML/Durable-Workflow-Exec/benchmarks/results/).
+Full reproducible benchmark reports are stored in [`benchmarks/results/`](./benchmarks/results/).
 
 ### 1. Horizontal Worker Scaling (1K Workflows × 3 Repetitions)
 
@@ -116,7 +119,7 @@ Interrupted mid-step via genuine `process.kill(pid, 'SIGKILL')` and recovered by
 
 ## 💻 Workflow Authoring SDK
 
-Define resilient workflows with simple TypeScript syntax. Below is an excerpt from the [Order Processing Example](file:///C:/Users/AZTREK/AI-ML/Durable-Workflow-Exec/examples/order-processing):
+Define resilient workflows with simple TypeScript syntax. Below is an excerpt from the [Order Processing Example](./examples/order-processing):
 
 ```typescript
 import { defineWorkflow } from "@durable/workflow-sdk";
@@ -238,4 +241,4 @@ pnpm test
 
 ## 📜 License
 
-Distributed under the [MIT License](file:///C:/Users/AZTREK/AI-ML/Durable-Workflow-Exec/LICENSE). Copyright © 2026 Aztrek.
+Distributed under the [MIT License](./LICENSE). Copyright © 2026 [Aztrek](https://github.com/starsnipe407).
