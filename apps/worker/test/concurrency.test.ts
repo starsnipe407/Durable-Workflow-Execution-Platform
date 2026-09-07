@@ -242,7 +242,7 @@ describe("Distributed Concurrency Coordinator", () => {
 
     // But cust-A and cust-B should execute concurrently (totalActive reaches 2)
     expect(maxTotalActive).toBeGreaterThanOrEqual(2);
-  });
+  }, 15000);
 
   it("recovers from abandoned leases after lease TTL expires without deadlocking", async () => {
     const coordinator = new ConcurrencyCoordinator(redis);

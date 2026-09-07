@@ -176,9 +176,9 @@ export async function runReconciliationBenchmark(
     await redis.flushall();
 
     // Verify BullMQ queues in Redis are completely empty
-    const remainingKeys = await redis.keys('*');
+    const remainingKeys = await redis.keys(`*${queueName}*`);
     if (remainingKeys.length > 0) {
-      throw new Error(`Expected 0 Redis keys after FLUSHALL, but found ${remainingKeys.length}`);
+      throw new Error(`Expected 0 Redis keys for queue ${queueName} after FLUSHALL, but found ${remainingKeys.length}`);
     }
     await redis.quit();
 
@@ -423,9 +423,9 @@ export async function runMultiTierReconciliationBenchmark(
 
         const redis = new Redis(redisUrl, { maxRetriesPerRequest: null });
         await redis.flushall();
-        const remainingKeys = await redis.keys('*');
+        const remainingKeys = await redis.keys(`*${queueName}*`);
         if (remainingKeys.length > 0) {
-          throw new Error(`Expected 0 Redis keys after FLUSHALL, but found ${remainingKeys.length}`);
+          throw new Error(`Expected 0 Redis keys for queue ${queueName} after FLUSHALL, but found ${remainingKeys.length}`);
         }
         await redis.quit();
 

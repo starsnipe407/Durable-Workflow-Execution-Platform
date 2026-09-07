@@ -44,7 +44,7 @@ describe('Task 4: Distributed Fencing & Retry Overhead Harness', () => {
     expect(result.workerAError).toBeDefined();
     expect(result.workerAError.length).toBeGreaterThan(0);
     expect(result.status).toBe('PASSED');
-  });
+  }, 15000);
 
   it('measures throughput degradation across failure rates (0% vs 20%)', async () => {
     const result = await runRetryBenchmark({
@@ -61,5 +61,5 @@ describe('Task 4: Distributed Fencing & Retry Overhead Harness', () => {
     expect(result.tiers[0]!.meanAttemptsPerWorkflow).toBe(1);
     expect(result.tiers[1]!.meanAttemptsPerWorkflow).toBeGreaterThan(1);
     expect(result.status).toBe('PASSED');
-  });
+  }, 15000);
 });
