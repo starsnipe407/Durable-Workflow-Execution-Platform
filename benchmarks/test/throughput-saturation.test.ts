@@ -36,7 +36,7 @@ describe('Task 2: Throughput Scaling & Saturation Harness', () => {
     const qSat = createWorkflowQueue(redisUrl, `${queueName}_sat`);
     await qSat.obliterate({ force: true }).catch(() => {});
     await qSat.close().catch(() => {});
-  });
+  }, 20000);
 
   it('measures throughput with steps/sec and queue latency percentiles', async () => {
     const results = await runThroughputBenchmark({
