@@ -1,8 +1,31 @@
 import { createPrismaClient, type PrismaClient } from '@durable/database';
 import { WorkflowRegistry, createWorker, type WorkflowWorker } from '@durable/worker';
-import { defineWorkflow } from '@durable/workflow-sdk';
+import {
+  defineWorkflow,
+  type WorkflowConfig,
+  type WorkflowDefinition,
+  type WorkflowHandler,
+} from '@durable/workflow-sdk';
 import { Redis } from 'ioredis';
 import { processOrderWorkflow } from '@example/order-processing';
+
+export type BenchmarkWorkflowDefinition<TInput, TOutput> = WorkflowDefinition<TInput, TOutput> & {
+  name: string;
+  version: string;
+  execute: WorkflowHandler<TInput, TOutput>;
+};
+
+function createBenchmarkWorkflow<TInput, TOutput>(
+  config: WorkflowConfig<TInput>,
+  handler: WorkflowHandler<TInput, TOutput>
+): BenchmarkWorkflowDefinition<TInput, TOutput> {
+  const def = defineWorkflow<TInput, TOutput>(config, handler);
+  return Object.assign(def, {
+    name: config.name,
+    version: config.version,
+    execute: handler,
+  });
+}
 
 export interface ChaosWorkflowInput {
   chaosRunId: string;
@@ -46,6 +69,78 @@ export const chaosWorkflow = defineWorkflow<ChaosWorkflowInput, { completed: boo
   }
 );
 
+export interface EngineBenchmarkInput {
+  stepDelayMs?: number;
+}
+
+export const engineBenchmarkWorkflow = createBenchmarkWorkflow<
+  EngineBenchmarkInput,
+  { completed: boolean }
+>({ name: 'engine-benchmark', version: '1.0.0' }, async ({ input, step }) => {
+  const delay = input.stepDelayMs ?? 5;
+
+  await step.run('step-a', async () => {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    return { step: 'a', ts: Date.now() };
+  });
+
+  await step.run('step-b', async () => {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    return { step: 'b', ts: Date.now() };
+  });
+
+  await step.run('step-c', async () => {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    return { step: 'c', ts: Date.now() };
+  });
+
+  await step.run('step-d', async () => {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    return { step: 'd', ts: Date.now() };
+  });
+
+  return { completed: true };
+});
+
+export interface RetryWorkflowInput {
+  failureRatePercent: number; // e.g. 0, 5, 10, 20
+  runId: string;
+}
+
+const retryAttempts = new Map<string, number>();
+
+export const retryWorkflow = createBenchmarkWorkflow<RetryWorkflowInput, { completed: boolean }>(
+  { name: 'retry-workflow', version: '1.0.0' },
+  async ({ input, step }) => {
+    await step.run(
+      'flaky-step',
+      {
+        retry: {
+          maxAttempts: 5,
+          backoff: { type: 'exponential', initialMs: 20, maxMs: 100 },
+        },
+      },
+      async (ctx: any) => {
+        const attempt = ctx?.attempt ?? ((retryAttempts.get(input.runId) ?? 0) + 1);
+        retryAttempts.set(input.runId, attempt);
+
+        if (input.failureRatePercent > 0 && attempt === 1) {
+          // Deterministic hash based on runId to simulate transient failure
+          const hash = input.runId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+          if (hash % 100 < input.failureRatePercent) {
+            throw new Error(`Injected transient failure (rate: ${input.failureRatePercent}%)`);
+          }
+        }
+
+        retryAttempts.delete(input.runId);
+        return { success: true, attempt };
+      }
+    );
+
+    return { completed: true };
+  }
+);
+
 export interface WorkerReplicaInstance {
   worker: WorkflowWorker;
   db: PrismaClient;
@@ -70,6 +165,8 @@ export async function startWorkerReplica(): Promise<WorkerReplicaInstance> {
   const registry = new WorkflowRegistry();
   registry.register(processOrderWorkflow);
   registry.register(chaosWorkflow);
+  registry.register(engineBenchmarkWorkflow);
+  registry.register(retryWorkflow);
 
   const worker = createWorker({
     db,
@@ -122,10 +219,11 @@ export async function startWorkerReplica(): Promise<WorkerReplicaInstance> {
   return { worker, db, shutdown };
 }
 
-const isChildProcess = Boolean(process.send);
-const isDirectCli = Boolean(process.argv[1]?.includes('worker-runner'));
+const isWorkerEntry = Boolean(
+  process.argv[1] && process.argv[1].includes('worker-runner')
+);
 
-if (isChildProcess || isDirectCli) {
+if (isWorkerEntry) {
   startWorkerReplica().catch((err) => {
     console.error(`Worker runner replica [PID ${process.pid}] failed to start:`, err);
     process.exit(1);
