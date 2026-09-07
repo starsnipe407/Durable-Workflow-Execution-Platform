@@ -219,7 +219,10 @@ export async function startWorkerReplica(): Promise<WorkerReplicaInstance> {
     ? parseInt(process.env.LEASE_TTL_MS, 10)
     : undefined;
 
-  const db = createPrismaClient(databaseUrl);
+  const dbUrlWithLimit = databaseUrl.includes('connection_limit=')
+    ? databaseUrl
+    : `${databaseUrl}${databaseUrl.includes('?') ? '&' : '?'}connection_limit=10`;
+  const db = createPrismaClient(dbUrlWithLimit);
   await db.$connect();
 
   const registry = new WorkflowRegistry();

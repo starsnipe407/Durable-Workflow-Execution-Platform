@@ -315,24 +315,31 @@ export async function runThroughputBenchmark(
 
         // 3. Warmup phase (discard timings)
         if (warmupRuns > 0) {
-          const warmupPromises = Array.from({ length: warmupRuns }, async (_, i) => {
-            const orderId = `warmup_${N}_${i}_${crypto.randomUUID().slice(0, 8)}`;
-            const input = createRunInput(orderId, i);
-            const run = await createWorkflowRun(db, {
-              tenantId,
-              workflowName,
-              workflowVersion: '1.0.0',
-              input: input as any,
+          const warmupRunIds: string[] = [];
+          const CHUNK_SIZE = 50;
+          for (let chunkStart = 0; chunkStart < warmupRuns; chunkStart += CHUNK_SIZE) {
+            const chunkEnd = Math.min(warmupRuns, chunkStart + CHUNK_SIZE);
+            const chunkPromises = Array.from({ length: chunkEnd - chunkStart }, async (_, offset) => {
+              const i = chunkStart + offset;
+              const orderId = `warmup_${N}_${i}_${crypto.randomUUID().slice(0, 8)}`;
+              const input = createRunInput(orderId, i);
+              const run = await createWorkflowRun(db, {
+                tenantId,
+                workflowName,
+                workflowVersion: '1.0.0',
+                input: input as any,
+              });
+              await enqueueWorkflowRun(queue, {
+                tenantId,
+                runId: run.id,
+                workflowName,
+                workflowVersion: '1.0.0',
+              });
+              return run.id;
             });
-            await enqueueWorkflowRun(queue, {
-              tenantId,
-              runId: run.id,
-              workflowName,
-              workflowVersion: '1.0.0',
-            });
-            return run.id;
-          });
-          const warmupRunIds = await Promise.all(warmupPromises);
+            const chunkIds = await Promise.all(chunkPromises);
+            warmupRunIds.push(...chunkIds);
+          }
           await awaitRunsCompletedWithLatencies(
             db,
             warmupRunIds,
@@ -353,31 +360,35 @@ export async function runThroughputBenchmark(
           const runStartTimes = new Map<string, number>();
           const runEnqueuedTimes = new Map<string, number>();
 
-          const submissionPromises = Array.from({ length: runsPerRepetition }, async (_, i) => {
-            const orderId = `ord_t${N}_r${rep}_${i}_${crypto.randomUUID().slice(0, 8)}`;
-            const input = createRunInput(orderId, i);
-            const submitTime = performance.now();
-            const enqueuedAt = Date.now();
-            const run = await createWorkflowRun(db, {
-              tenantId,
-              workflowName,
-              workflowVersion: '1.0.0',
-              input: input as any,
+          const CHUNK_SIZE = 50;
+          for (let chunkStart = 0; chunkStart < runsPerRepetition; chunkStart += CHUNK_SIZE) {
+            const chunkEnd = Math.min(runsPerRepetition, chunkStart + CHUNK_SIZE);
+            const chunkPromises = Array.from({ length: chunkEnd - chunkStart }, async (_, offset) => {
+              const i = chunkStart + offset;
+              const orderId = `ord_t${N}_r${rep}_${i}_${crypto.randomUUID().slice(0, 8)}`;
+              const input = createRunInput(orderId, i);
+              const submitTime = performance.now();
+              const enqueuedAt = Date.now();
+              const run = await createWorkflowRun(db, {
+                tenantId,
+                workflowName,
+                workflowVersion: '1.0.0',
+                input: input as any,
+              });
+              await enqueueWorkflowRun(queue, {
+                tenantId,
+                runId: run.id,
+                workflowName,
+                workflowVersion: '1.0.0',
+              });
+              return { id: run.id, submitTime, enqueuedAt };
             });
-            await enqueueWorkflowRun(queue, {
-              tenantId,
-              runId: run.id,
-              workflowName,
-              workflowVersion: '1.0.0',
-            });
-            return { id: run.id, submitTime, enqueuedAt };
-          });
-
-          const submitted = await Promise.all(submissionPromises);
-          for (const item of submitted) {
-            runIds.push(item.id);
-            runStartTimes.set(item.id, item.submitTime);
-            runEnqueuedTimes.set(item.id, item.enqueuedAt);
+            const chunkSubmitted = await Promise.all(chunkPromises);
+            for (const item of chunkSubmitted) {
+              runIds.push(item.id);
+              runStartTimes.set(item.id, item.submitTime);
+              runEnqueuedTimes.set(item.id, item.enqueuedAt);
+            }
           }
 
           const repLatencies = await awaitRunsCompletedWithLatencies(

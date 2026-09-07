@@ -6,6 +6,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: durable_workflow_test
+    command: postgres -c max_connections=500 -c shared_buffers=256MB
     ports:
       - "5433:5432"
     tmpfs:
