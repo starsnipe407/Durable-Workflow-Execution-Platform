@@ -65,6 +65,7 @@ export interface ThroughputBenchOptions {
   queueName?: string;
   timeoutMs?: number;
   workerRunnerPath?: string;
+  workflowName?: 'engine-benchmark' | 'process-order';
 }
 
 function computeMedian(numbers: number[]): number {
@@ -113,14 +114,21 @@ export async function stopWorkerProcesses(children: ChildProcess[]): Promise<voi
   );
 }
 
+export interface CompletionLatencies extends Array<number> {
+  workflowLatencies: number[];
+  queueLatencies: number[];
+}
+
 export async function awaitRunsCompletedWithLatencies(
   db: PrismaClient,
   runIds: string[],
   startTimes: Map<string, number>,
-  timeoutMs: number
-): Promise<number[]> {
+  timeoutMs: number,
+  enqueuedTimes?: Map<string, number>
+): Promise<CompletionLatencies> {
   const pending = new Set(runIds);
-  const latencies: number[] = [];
+  const workflowLatencies: number[] = [];
+  const queueLatencies: number[] = [];
   const start = performance.now();
 
   while (pending.size > 0) {
@@ -136,7 +144,7 @@ export async function awaitRunsCompletedWithLatencies(
       const slice = pendingArray.slice(i, i + batchSize);
       const runs = await db.workflowRun.findMany({
         where: { id: { in: slice } },
-        select: { id: true, status: true },
+        select: { id: true, status: true, startedAt: true },
       });
 
       for (const run of runs) {
@@ -146,7 +154,13 @@ export async function awaitRunsCompletedWithLatencies(
         if (run.status === 'COMPLETED') {
           const finishedAt = performance.now();
           const submittedAt = startTimes.get(run.id) ?? start;
-          latencies.push(Number((finishedAt - submittedAt).toFixed(2)));
+          workflowLatencies.push(Number((finishedAt - submittedAt).toFixed(2)));
+
+          const enqueuedAt = enqueuedTimes?.get(run.id);
+          if (enqueuedAt !== undefined) {
+            const startedAtMs = run.startedAt ? run.startedAt.getTime() : Date.now();
+            queueLatencies.push(Math.max(0, Number((startedAtMs - enqueuedAt).toFixed(2))));
+          }
           pending.delete(run.id);
         }
       }
@@ -157,7 +171,10 @@ export async function awaitRunsCompletedWithLatencies(
     }
   }
 
-  return latencies;
+  return Object.assign(workflowLatencies, {
+    workflowLatencies,
+    queueLatencies,
+  });
 }
 
 export async function runThroughputBenchmark(
@@ -204,6 +221,24 @@ export async function runThroughputBenchmark(
       execArgv = [...execArgv, '--import', 'tsx'];
     }
   }
+
+  const workflowName = options?.workflowName ?? 'engine-benchmark';
+  const stepsPerWorkflow = workflowName === 'engine-benchmark' ? 4 : (workflowName === 'process-order' ? 7 : 4);
+  const createRunInput = (orderId: string, idx: number) => {
+    if (workflowName === 'engine-benchmark') {
+      return { stepDelayMs: 2 };
+    }
+    return {
+      orderId,
+      customerId: `cust_${idx}`,
+      customerEmail: `customer_${idx}@example.com`,
+      items: [
+        { sku: 'ITEM-A', quantity: 2, price: 25 },
+        { sku: 'ITEM-B', quantity: 1, price: 50 },
+      ],
+      totalAmount: 100,
+    };
+  };
 
   const db = createPrismaClient(databaseUrl);
   await db.$connect();
@@ -282,23 +317,17 @@ export async function runThroughputBenchmark(
         if (warmupRuns > 0) {
           const warmupPromises = Array.from({ length: warmupRuns }, async (_, i) => {
             const orderId = `warmup_${N}_${i}_${crypto.randomUUID().slice(0, 8)}`;
-            const input: OrderInput = {
-              orderId,
-              customerId: `cust_warmup_${i}`,
-              customerEmail: `warmup_${i}@example.com`,
-              items: [{ sku: 'SKU-WARMUP', quantity: 1, price: 10 }],
-              totalAmount: 10,
-            };
+            const input = createRunInput(orderId, i);
             const run = await createWorkflowRun(db, {
               tenantId,
-              workflowName: 'process-order',
+              workflowName,
               workflowVersion: '1.0.0',
               input: input as any,
             });
             await enqueueWorkflowRun(queue, {
               tenantId,
               runId: run.id,
-              workflowName: 'process-order',
+              workflowName,
               workflowVersion: '1.0.0',
             });
             return run.id;
@@ -316,51 +345,47 @@ export async function runThroughputBenchmark(
         const durationsMs: number[] = [];
         const throughputsPerSec: number[] = [];
         const tierRawLatencies: number[] = [];
+        const tierRawQueueLatencies: number[] = [];
 
         for (let rep = 1; rep <= measuredRepetitions; rep++) {
           const repStart = performance.now();
           const runIds: string[] = [];
           const runStartTimes = new Map<string, number>();
+          const runEnqueuedTimes = new Map<string, number>();
 
           const submissionPromises = Array.from({ length: runsPerRepetition }, async (_, i) => {
             const orderId = `ord_t${N}_r${rep}_${i}_${crypto.randomUUID().slice(0, 8)}`;
-            const input: OrderInput = {
-              orderId,
-              customerId: `cust_${i}`,
-              customerEmail: `customer_${i}@example.com`,
-              items: [
-                { sku: 'ITEM-A', quantity: 2, price: 25 },
-                { sku: 'ITEM-B', quantity: 1, price: 50 },
-              ],
-              totalAmount: 100,
-            };
+            const input = createRunInput(orderId, i);
             const submitTime = performance.now();
+            const enqueuedAt = Date.now();
             const run = await createWorkflowRun(db, {
               tenantId,
-              workflowName: 'process-order',
+              workflowName,
               workflowVersion: '1.0.0',
               input: input as any,
             });
             await enqueueWorkflowRun(queue, {
               tenantId,
               runId: run.id,
-              workflowName: 'process-order',
+              workflowName,
               workflowVersion: '1.0.0',
             });
-            return { id: run.id, submitTime };
+            return { id: run.id, submitTime, enqueuedAt };
           });
 
           const submitted = await Promise.all(submissionPromises);
           for (const item of submitted) {
             runIds.push(item.id);
             runStartTimes.set(item.id, item.submitTime);
+            runEnqueuedTimes.set(item.id, item.enqueuedAt);
           }
 
           const repLatencies = await awaitRunsCompletedWithLatencies(
             db,
             runIds,
             runStartTimes,
-            timeoutMs
+            timeoutMs,
+            runEnqueuedTimes
           );
 
           const repDurationMs = Number((performance.now() - repStart).toFixed(2));
@@ -370,13 +395,19 @@ export async function runThroughputBenchmark(
 
           durationsMs.push(repDurationMs);
           throughputsPerSec.push(repThroughput);
-          tierRawLatencies.push(...repLatencies);
+          tierRawLatencies.push(...repLatencies.workflowLatencies);
+          tierRawQueueLatencies.push(...repLatencies.queueLatencies);
         }
 
         // 5. Compute tier statistics
         const medianDurationMs = computeMedian(durationsMs);
         const medianThroughputPerSec = computeMedian(throughputsPerSec);
         const latencyMs = calculatePercentiles(tierRawLatencies);
+        const workflowLatencyMs = latencyMs;
+        const queueLatencyMs = calculatePercentiles(
+          tierRawQueueLatencies.length > 0 ? tierRawQueueLatencies : [0]
+        );
+        const stepsPerSec = Number((medianThroughputPerSec * stepsPerWorkflow).toFixed(2));
 
         const tierResult: ThroughputScalingTier = {
           workerReplicas: N,
@@ -390,6 +421,9 @@ export async function runThroughputBenchmark(
           medianDurationMs,
           throughputsPerSec,
           medianThroughputPerSec,
+          stepsPerSec,
+          workflowLatencyMs,
+          queueLatencyMs,
           latencyMs,
           rawLatenciesMs: tierRawLatencies,
         };

@@ -150,6 +150,7 @@ describe('Horizontal Worker Replica & Throughput Benchmark Harness', () => {
         redisUrl,
         queueName: testQueueName,
         timeoutMs: 30000,
+        workflowName: 'process-order',
       });
 
       // Validate returned structure

@@ -9,6 +9,7 @@
     "build": "tsc --build",
     "test": "dotenv -e ../.env.test -- vitest run",
     "bench:throughput": "tsx src/bench-throughput.ts",
+    "bench:saturation": "tsx src/bench-saturation.ts",
     "bench:chaos": "tsx src/bench-chaos.ts",
     "bench:recovery": "tsx src/bench-reconciliation.ts",
     "bench:all": "tsx src/bench-all.ts"
