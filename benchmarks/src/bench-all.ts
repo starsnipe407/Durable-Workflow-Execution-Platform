@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectSystemMetadata } from './sysinfo.js';
+import { collectExtendedSystemMetadata } from './sysinfo.js';
 import { runThroughputBenchmark } from './bench-throughput.js';
 import { runSaturationBenchmark } from './bench-saturation.js';
 import { runMultiTierReconciliationBenchmark } from './bench-reconciliation.js';
@@ -69,7 +69,7 @@ export async function runAllBenchmarks(
   const outputDir =
     typeof optionsOrProfile === 'object' ? optionsOrProfile?.outputDir : undefined;
 
-  const sysinfo = await collectSystemMetadata();
+  const sysinfo = await collectExtendedSystemMetadata();
   console.log('=====================================================');
   console.log('  DURABLE WORKFLOW EXEC - COMPREHENSIVE BENCHMARKS   ');
   console.log('=====================================================');
@@ -98,9 +98,9 @@ export async function runAllBenchmarks(
       : {
           tiers: [1, 2, 4, 8],
           concurrencyPerWorker: 8,
-          warmupRuns: 5,
+          warmupRuns: 50,
           measuredRepetitions: 3,
-          runsPerRepetition: 100,
+          runsPerRepetition: 1000,
         }
   );
   console.log('✓ Horizontal Scaling Benchmark Complete.\n');
