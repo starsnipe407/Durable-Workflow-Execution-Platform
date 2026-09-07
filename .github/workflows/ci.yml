@@ -19,7 +19,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: durable_workflow_test
         ports:
-          - 5432:5432
+          - 5433:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 5s
@@ -29,12 +29,16 @@ jobs:
       redis:
         image: redis:7-alpine
         ports:
-          - 6379:6379
+          - 6380:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5433/durable_workflow_test?schema=public
+      REDIS_URL: redis://localhost:6380
 
     steps:
       - name: Checkout repository
@@ -55,8 +59,6 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma Client & Run Migrations
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/durable_workflow_test?schema=public
         run: |
           pnpm --filter @durable/database exec prisma generate
           pnpm --filter @durable/database exec prisma migrate deploy
@@ -64,8 +66,8 @@ jobs:
       - name: Build Monorepo (Turbo)
         run: pnpm run build
 
-      - name: Run Tests
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/durable_workflow_test?schema=public
-          REDIS_URL: redis://localhost:6379
+      - name: Run Core Test Suites (Apps, Packages, Examples)
         run: pnpm test
+
+      - name: Run Benchmark Test Suite (Isolated)
+        run: pnpm --filter @durable/benchmarks test
