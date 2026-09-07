@@ -1,0 +1,87 @@
+{
+  "id": "retry-1788767263604",
+  "title": "Transient Failure Retry Overhead Benchmark",
+  "timestamp": "2026-09-07T07:47:43.604Z",
+  "system": {
+    "nodeVersion": "v24.11.1",
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "cpuArch": "x64",
+    "cpuModel": "Intel(R) Core(TM) Ultra 9 275HX",
+    "cpuCores": 24,
+    "totalMemoryBytes": 33752997888,
+    "totalMemoryGb": 31.43,
+    "gitCommitSha": "3e49e550da7c1123cc21b859b395b1d62524bca6",
+    "timestamp": "2026-09-07T07:47:42.356Z"
+  },
+  "retryOverhead": {
+    "scenario": "RELIABILITY_RETRY_OVERHEAD",
+    "tiers": [
+      {
+        "failureRatePercent": 0,
+        "totalWorkflows": 20,
+        "durationMs": 182.27,
+        "throughputPerSec": 109.73,
+        "latencyMs": {
+          "min": 64,
+          "p50": 91,
+          "p95": 151,
+          "p99": 153,
+          "max": 153,
+          "avg": 113.9
+        },
+        "totalStepAttempts": 20,
+        "meanAttemptsPerWorkflow": 1
+      },
+      {
+        "failureRatePercent": 5,
+        "totalWorkflows": 20,
+        "durationMs": 75.91,
+        "throughputPerSec": 263.47,
+        "latencyMs": {
+          "min": 27,
+          "p50": 54,
+          "p95": 69,
+          "p99": 76,
+          "max": 76,
+          "avg": 54.85
+        },
+        "totalStepAttempts": 21,
+        "meanAttemptsPerWorkflow": 1.05
+      },
+      {
+        "failureRatePercent": 10,
+        "totalWorkflows": 20,
+        "durationMs": 78.07,
+        "throughputPerSec": 256.18,
+        "latencyMs": {
+          "min": 37,
+          "p50": 54,
+          "p95": 72,
+          "p99": 73,
+          "max": 73,
+          "avg": 53
+        },
+        "totalStepAttempts": 22,
+        "meanAttemptsPerWorkflow": 1.1
+      },
+      {
+        "failureRatePercent": 20,
+        "totalWorkflows": 20,
+        "durationMs": 125.21,
+        "throughputPerSec": 159.73,
+        "latencyMs": {
+          "min": 35,
+          "p50": 63,
+          "p95": 80,
+          "p99": 80,
+          "max": 80,
+          "avg": 57.45
+        },
+        "totalStepAttempts": 24,
+        "meanAttemptsPerWorkflow": 1.2
+      }
+    ],
+    "status": "PASSED"
+  }
+}

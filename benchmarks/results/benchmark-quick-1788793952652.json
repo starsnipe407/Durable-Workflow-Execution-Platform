@@ -1,0 +1,301 @@
+{
+  "id": "quick-1788793952652",
+  "title": "Durable Workflow Engine Performance & Resilience Benchmark Suite",
+  "timestamp": "2026-09-07T15:12:32.652Z",
+  "profile": "quick",
+  "system": {
+    "nodeVersion": "v24.11.1",
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "cpuArch": "x64",
+    "cpuModel": "Intel(R) Core(TM) Ultra 9 275HX",
+    "cpuCores": 24,
+    "totalMemoryBytes": 33752997888,
+    "totalMemoryGb": 31.43,
+    "gitCommitSha": "36dcdc1d4abfe3b185d7ba5a9ad3ea6c2132a2b3",
+    "timestamp": "2026-09-07T15:12:15.159Z"
+  },
+  "throughput": [
+    {
+      "workerReplicas": 1,
+      "concurrencyPerWorker": 4,
+      "totalWorkers": 1,
+      "warmupRuns": 2,
+      "measuredRepetitions": 2,
+      "runsPerRepetition": 10,
+      "totalWorkflows": 20,
+      "durationsMs": [
+        278.13,
+        232.64
+      ],
+      "medianDurationMs": 255.38,
+      "throughputsPerSec": [
+        35.95,
+        42.98
+      ],
+      "medianThroughputPerSec": 39.47,
+      "stepsPerSec": 157.88,
+      "workflowLatencyMs": {
+        "min": 76.3,
+        "p50": 169.7,
+        "p95": 277.86,
+        "p99": 277.9,
+        "max": 277.9,
+        "avg": 164.91
+      },
+      "queueLatencyMs": {
+        "min": 9,
+        "p50": 71,
+        "p95": 180,
+        "p99": 180,
+        "max": 180,
+        "avg": 76.5
+      },
+      "latencyMs": {
+        "min": 76.3,
+        "p50": 169.7,
+        "p95": 277.86,
+        "p99": 277.9,
+        "max": 277.9,
+        "avg": 164.91
+      },
+      "rawLatenciesMs": [
+        122.59,
+        122.52,
+        122.54,
+        122.59,
+        184.7,
+        184.69,
+        216.72,
+        216.76,
+        277.86,
+        277.9,
+        76.3,
+        76.36,
+        76.36,
+        76.4,
+        169.7,
+        169.7,
+        169.72,
+        169.71,
+        232.56,
+        232.56
+      ]
+    },
+    {
+      "workerReplicas": 2,
+      "concurrencyPerWorker": 4,
+      "totalWorkers": 2,
+      "warmupRuns": 2,
+      "measuredRepetitions": 2,
+      "runsPerRepetition": 10,
+      "totalWorkflows": 20,
+      "durationsMs": [
+        203.31,
+        171.71
+      ],
+      "medianDurationMs": 187.51,
+      "throughputsPerSec": [
+        49.19,
+        58.24
+      ],
+      "medianThroughputPerSec": 53.72,
+      "stepsPerSec": 214.88,
+      "workflowLatencyMs": {
+        "min": 79.31,
+        "p50": 139.25,
+        "p95": 203.19,
+        "p99": 203.21,
+        "max": 203.21,
+        "avg": 136.02
+      },
+      "queueLatencyMs": {
+        "min": 11,
+        "p50": 44,
+        "p95": 136,
+        "p99": 139,
+        "max": 139,
+        "avg": 45.3
+      },
+      "latencyMs": {
+        "min": 79.31,
+        "p50": 139.25,
+        "p95": 203.19,
+        "p99": 203.21,
+        "max": 203.21,
+        "avg": 136.02
+      },
+      "rawLatenciesMs": [
+        139.2,
+        139.25,
+        139.25,
+        139.25,
+        139.28,
+        171.46,
+        171.48,
+        171.49,
+        203.19,
+        203.21,
+        79.31,
+        79.31,
+        79.33,
+        79.32,
+        110.66,
+        110.66,
+        110.67,
+        110.69,
+        171.66,
+        171.65
+      ]
+    }
+  ],
+  "saturation": {
+    "scenario": "OFFERED_LOAD_SATURATION",
+    "fixedWorkerReplicas": 2,
+    "concurrencyPerWorker": 4,
+    "tiers": [
+      {
+        "offeredRateReqPerSec": 25,
+        "acceptedRuns": 50,
+        "completedRuns": 50,
+        "durationMs": 2080.59,
+        "achievedThroughputPerSec": 24.03,
+        "maxQueueDepth": 4,
+        "queueLatencyMs": {
+          "min": 7,
+          "p50": 8,
+          "p95": 18,
+          "p99": 44,
+          "max": 44,
+          "avg": 9.62
+        },
+        "isSaturated": false
+      },
+      {
+        "offeredRateReqPerSec": 50,
+        "acceptedRuns": 100,
+        "completedRuns": 100,
+        "durationMs": 2104.5,
+        "achievedThroughputPerSec": 47.52,
+        "maxQueueDepth": 5,
+        "queueLatencyMs": {
+          "min": 6,
+          "p50": 7,
+          "p95": 10,
+          "p99": 11,
+          "max": 21,
+          "avg": 7.65
+        },
+        "isSaturated": false
+      }
+    ],
+    "saturationPointReqPerSec": null,
+    "status": "PASSED"
+  },
+  "reconciliationMultiTier": {
+    "scenario": "MULTI_TIER_REDIS_RECONSTRUCTION",
+    "redisFlushCommand": "FLUSHALL",
+    "tiers": [
+      {
+        "totalRunsSubmitted": 10,
+        "reconstructionDurationMs": 21.32,
+        "requeueRatePerSec": 469.04,
+        "lostRunsCount": 0,
+        "duplicateRunsCount": 0,
+        "completedRunsCount": 10,
+        "status": "PASSED"
+      },
+      {
+        "totalRunsSubmitted": 50,
+        "reconstructionDurationMs": 33.41,
+        "requeueRatePerSec": 1496.56,
+        "lostRunsCount": 0,
+        "duplicateRunsCount": 0,
+        "completedRunsCount": 50,
+        "status": "PASSED"
+      }
+    ],
+    "status": "PASSED"
+  },
+  "chaosMultiTtl": {
+    "scenario": "MULTI_TTL_CHAOS_SWEEP",
+    "results": [
+      {
+        "scenario": "WORKER_SIGKILL_RECOVERY",
+        "workerPid": 37032,
+        "killSignal": "SIGKILL",
+        "leaseTtlMs": 1000,
+        "recoveryLatencyMs": 1781.21,
+        "timeToAbandonedMs": 1237.05,
+        "workflowRunId": "501ae0fb-c0f4-40ad-b619-a42416e33a05",
+        "duplicateStepCalls": 0,
+        "status": "COMPLETED"
+      },
+      {
+        "scenario": "WORKER_SIGKILL_RECOVERY",
+        "workerPid": 41228,
+        "killSignal": "SIGKILL",
+        "leaseTtlMs": 2000,
+        "recoveryLatencyMs": 2746.89,
+        "timeToAbandonedMs": 2214.72,
+        "workflowRunId": "1b2d5a06-8f8f-4409-9a77-dfbc91651503",
+        "duplicateStepCalls": 0,
+        "status": "COMPLETED"
+      }
+    ],
+    "status": "PASSED"
+  },
+  "fencing": {
+    "scenario": "ZOMBIE_WORKER_FENCING",
+    "workflowRunId": "447c0d96-961d-4f77-bfd6-12739fe18190",
+    "stepKey": "fenced-step",
+    "workerAPid": 33024,
+    "workerBPid": 30496,
+    "leaseTtlMs": 1500,
+    "workerAAttemptNumber": 1,
+    "workerBAttemptNumber": 2,
+    "workerAError": "Step attempt commit failed because attempt is no longer active (fenced out).",
+    "workerBStatus": "COMPLETED",
+    "finalStepAttemptCount": 2,
+    "fencingEnforced": true,
+    "status": "PASSED"
+  },
+  "retryOverhead": {
+    "scenario": "RELIABILITY_RETRY_OVERHEAD",
+    "tiers": [
+      {
+        "failureRatePercent": 0,
+        "totalWorkflows": 10,
+        "durationMs": 140.63,
+        "throughputPerSec": 71.11,
+        "latencyMs": {
+          "min": 66,
+          "p50": 73,
+          "p95": 135,
+          "p99": 135,
+          "max": 135,
+          "avg": 84.3
+        },
+        "totalStepAttempts": 10,
+        "meanAttemptsPerWorkflow": 1
+      },
+      {
+        "failureRatePercent": 20,
+        "totalWorkflows": 10,
+        "durationMs": 113.98,
+        "throughputPerSec": 87.73,
+        "latencyMs": {
+          "min": 31,
+          "p50": 38,
+          "p95": 70,
+          "p99": 70,
+          "max": 70,
+          "avg": 47
+        },
+        "totalStepAttempts": 12,
+        "meanAttemptsPerWorkflow": 1.2
+      }
+    ],
+    "status": "PASSED"
+  }
+}

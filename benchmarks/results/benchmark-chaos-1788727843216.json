@@ -1,0 +1,27 @@
+{
+  "id": "chaos-1788727843216",
+  "title": "Real Worker SIGKILL Chaos Benchmark",
+  "timestamp": "2026-09-06T20:50:43.216Z",
+  "system": {
+    "nodeVersion": "v24.11.1",
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "cpuArch": "x64",
+    "cpuModel": "Intel(R) Core(TM) Ultra 9 275HX",
+    "cpuCores": 24,
+    "totalMemoryBytes": 33752997888,
+    "totalMemoryGb": 31.43,
+    "gitCommitSha": "b27dfb56dfd39d51acdac6ab284e49920b42dbb3",
+    "timestamp": "2026-09-06T20:50:40.185Z"
+  },
+  "chaos": {
+    "scenario": "WORKER_SIGKILL_RECOVERY",
+    "workerPid": 12544,
+    "killSignal": "SIGKILL",
+    "leaseTtlMs": 2000,
+    "recoveryLatencyMs": 2598.73,
+    "workflowRunId": "a305c710-77a5-44d9-865e-2abfa7e26453",
+    "duplicateStepCalls": 0,
+    "status": "COMPLETED"
+  }
+}
