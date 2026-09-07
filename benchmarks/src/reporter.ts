@@ -60,6 +60,30 @@ export function formatMarkdownReport(report: BenchmarkReport): string {
     lines.push('');
   }
 
+  if (report.fencing) {
+    lines.push('## Zombie Worker Fencing');
+    lines.push('');
+    lines.push('| Scenario | Run ID | Worker A PID | Worker B PID | Lease TTL (ms) | Fencing Enforced | Worker B Status | Status |');
+    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
+    lines.push(
+      `| ${report.fencing.scenario} | ${report.fencing.workflowRunId} | ${report.fencing.workerAPid} | ${report.fencing.workerBPid} | ${report.fencing.leaseTtlMs} | ${report.fencing.fencingEnforced} | ${report.fencing.workerBStatus} | ${report.fencing.status} |`
+    );
+    lines.push('');
+  }
+
+  if (report.retryOverhead && report.retryOverhead.tiers.length > 0) {
+    lines.push('## Transient Failure Retry Overhead');
+    lines.push('');
+    lines.push('| Failure Rate | Workflows | Duration (ms) | Workflows/Sec | P50 (ms) | P95 (ms) | Mean Attempts/Workflow |');
+    lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+    for (const tier of report.retryOverhead.tiers) {
+      lines.push(
+        `| ${tier.failureRatePercent}% | ${tier.totalWorkflows} | ${tier.durationMs} | ${tier.throughputPerSec} | ${tier.latencyMs.p50} | ${tier.latencyMs.p95} | ${tier.meanAttemptsPerWorkflow} |`
+      );
+    }
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 

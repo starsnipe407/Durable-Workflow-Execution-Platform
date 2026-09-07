@@ -121,8 +121,17 @@ export const retryWorkflow = createBenchmarkWorkflow<RetryWorkflowInput, { compl
         },
       },
       async (ctx: any) => {
-        const attempt = ctx?.attempt ?? ((retryAttempts.get(input.runId) ?? 0) + 1);
-        retryAttempts.set(input.runId, attempt);
+        const redisUrl = process.env.REDIS_URL || 'redis://localhost:6380';
+        const redis = new Redis(redisUrl, { maxRetriesPerRequest: null });
+        let attempt = 1;
+        try {
+          attempt = await redis.incr(`retry:attempt:${input.runId}`);
+        } catch {
+          attempt = ctx?.attempt ?? ((retryAttempts.get(input.runId) ?? 0) + 1);
+          retryAttempts.set(input.runId, attempt);
+        } finally {
+          await redis.quit().catch(() => {});
+        }
 
         if (input.failureRatePercent > 0 && attempt === 1) {
           // Deterministic hash based on runId to simulate transient failure
@@ -138,6 +147,57 @@ export const retryWorkflow = createBenchmarkWorkflow<RetryWorkflowInput, { compl
     );
 
     return { completed: true };
+  }
+);
+
+export interface FencingWorkflowInput {
+  runId: string;
+}
+
+export const fencingWorkflow = createBenchmarkWorkflow<
+  FencingWorkflowInput,
+  { completed: boolean; workerPid?: number; attempt?: number }
+>(
+  { name: 'fencing-workflow', version: '1.0.0' },
+  async ({ input, step }) => {
+    let result: any;
+    try {
+      result = await step.run('fenced-step', async () => {
+        const redisUrl = process.env.REDIS_URL || 'redis://localhost:6380';
+        const redis = new Redis(redisUrl, { maxRetriesPerRequest: null });
+        try {
+          const attempt = await redis.incr(`fencing:attempts:${input.runId}`);
+          if (attempt === 1) {
+            await redis.set(`fencing:workerA:pid:${input.runId}`, process.pid.toString());
+            await redis.set(`fencing:paused:${input.runId}`, '1');
+            const waitStart = Date.now();
+            while (Date.now() - waitStart < 30000) {
+              const release = await redis.get(`fencing:release:${input.runId}`);
+              if (release) break;
+              await new Promise((r) => setTimeout(r, 50));
+            }
+          } else {
+            await redis.set(`fencing:workerB:pid:${input.runId}`, process.pid.toString());
+          }
+          return { workerPid: process.pid, attempt, completedAt: Date.now() };
+        } finally {
+          await redis.quit().catch(() => {});
+        }
+      });
+    } catch (err: any) {
+      const redisUrl = process.env.REDIS_URL || 'redis://localhost:6380';
+      const redis = new Redis(redisUrl, { maxRetriesPerRequest: null });
+      try {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await redis.set(`fencing:workerA:error:${input.runId}`, errMsg);
+        await redis.set(`fencing:workerA:errorName:${input.runId}`, err?.name ?? 'Error');
+      } finally {
+        await redis.quit().catch(() => {});
+      }
+      throw err;
+    }
+
+    return { completed: true, ...result };
   }
 );
 
@@ -167,6 +227,7 @@ export async function startWorkerReplica(): Promise<WorkerReplicaInstance> {
   registry.register(chaosWorkflow);
   registry.register(engineBenchmarkWorkflow);
   registry.register(retryWorkflow);
+  registry.register(fencingWorkflow);
 
   const worker = createWorker({
     db,

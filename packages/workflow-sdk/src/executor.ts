@@ -105,6 +105,11 @@ export class WorkflowExecutor {
         return undefined;
       }
 
+      if ((err as any)?.name === "StaleAttemptError") {
+        // Fenced out by transactional fence; do not corrupt authoritative workflow run state
+        throw err;
+      }
+
       const errorMessage = err instanceof Error ? err.message : String(err);
 
       // Record failure on workflow run
