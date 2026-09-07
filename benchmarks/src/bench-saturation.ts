@@ -62,6 +62,7 @@ export interface SaturationBenchOptions {
   redisUrl?: string;
   queueName?: string;
   workerRunnerPath?: string;
+  drainTimeoutMs?: number;
 }
 
 export async function runSaturationBenchmark(
@@ -71,6 +72,7 @@ export async function runSaturationBenchmark(
   const durationSec = options?.durationPerTierSec ?? 5;
   const workerReplicas = options?.workerReplicas ?? 4;
   const concurrency = options?.concurrencyPerWorker ?? 8;
+  const drainTimeoutMs = options?.drainTimeoutMs ?? 30000;
   const databaseUrl =
     options?.databaseUrl ||
     process.env.DATABASE_URL ||
@@ -186,36 +188,45 @@ export async function runSaturationBenchmark(
 
       const tierStartTime = performance.now();
 
-      // Pace workflow submissions at offered rate
-      for (let i = 0; i < totalToInject; i++) {
-        const targetElapsedMs = (i * 1000) / rate;
-        const currentElapsedMs = performance.now() - tierStartTime;
-        if (targetElapsedMs > currentElapsedMs) {
-          await new Promise((r) => setTimeout(r, Math.max(0, targetElapsedMs - currentElapsedMs)));
+      let sampleTimer: NodeJS.Timeout | null = null;
+      sampleTimer = setInterval(async () => {
+        try {
+          const [w, a] = await Promise.all([queue.getWaitingCount(), queue.getActiveCount()]);
+          queueDepths.push(w + a);
+        } catch {}
+      }, 50);
+
+      try {
+        // Pace workflow submissions at offered rate
+        for (let i = 0; i < totalToInject; i++) {
+          const targetElapsedMs = (i * 1000) / rate;
+          const currentElapsedMs = performance.now() - tierStartTime;
+          if (targetElapsedMs > currentElapsedMs) {
+            await new Promise((r) => setTimeout(r, Math.max(0, targetElapsedMs - currentElapsedMs)));
+          }
+
+          const enqueuedAt = Date.now();
+          const run = await createWorkflowRun(db, {
+            tenantId,
+            workflowName: 'engine-benchmark',
+            workflowVersion: '1.0.0',
+            input: { stepDelayMs: 2 } as any,
+          });
+
+          await enqueueWorkflowRun(queue, {
+            tenantId,
+            runId: run.id,
+            workflowName: 'engine-benchmark',
+            workflowVersion: '1.0.0',
+          });
+
+          runIds.push(run.id);
+          enqueuedAtMap.set(run.id, enqueuedAt);
         }
-
-        const enqueuedAt = Date.now();
-        const run = await createWorkflowRun(db, {
-          tenantId,
-          workflowName: 'engine-benchmark',
-          workflowVersion: '1.0.0',
-          input: { stepDelayMs: 2 } as any,
-        });
-
-        await enqueueWorkflowRun(queue, {
-          tenantId,
-          runId: run.id,
-          workflowName: 'engine-benchmark',
-          workflowVersion: '1.0.0',
-        });
-
-        runIds.push(run.id);
-        enqueuedAtMap.set(run.id, enqueuedAt);
-
-        if (i % 5 === 0 || i === totalToInject - 1) {
-          const waiting = await queue.getWaitingCount();
-          const active = await queue.getActiveCount();
-          queueDepths.push(waiting + active);
+      } finally {
+        if (sampleTimer) {
+          clearInterval(sampleTimer);
+          sampleTimer = null;
         }
       }
 
@@ -223,7 +234,6 @@ export async function runSaturationBenchmark(
       const pending = new Set(runIds);
       const queueLatencies: number[] = [];
       let completedRuns = 0;
-      const drainTimeoutMs = 30000;
       const drainStart = performance.now();
 
       while (pending.size > 0 && performance.now() - drainStart < drainTimeoutMs) {
@@ -253,7 +263,7 @@ export async function runSaturationBenchmark(
           const waiting = await queue.getWaitingCount();
           const active = await queue.getActiveCount();
           queueDepths.push(waiting + active);
-          await new Promise((r) => setTimeout(r, 25));
+          await new Promise((r) => setTimeout(r, 100));
         }
       }
 
@@ -261,7 +271,7 @@ export async function runSaturationBenchmark(
       const achievedThroughputPerSec = Number(
         ((completedRuns / (tierDurationMs / 1000))).toFixed(2)
       );
-      const maxQueueDepth = queueDepths.length > 0 ? Math.max(...queueDepths) : 0;
+      const maxQueueDepth = queueDepths.reduce((max, d) => Math.max(max, d), 0);
       const queueLatencyMs = calculatePercentiles(
         queueLatencies.length > 0 ? queueLatencies : [0]
       );
